@@ -1,0 +1,35 @@
+[project]
+name = "relocation"
+version = "0.1.0"
+description = "Retirement relocation planning tool"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.133.1",
+    "pydantic>=2.12.5",
+    "pydantic-settings>=2.13.1",
+    "rich>=14.3.3",
+    "sqlalchemy>=2.0.47",
+    "typer>=0.24.1",
+    "uvicorn[standard]>=0.41.0",
+]
+
+[project.scripts]
+relocation = "relocation.cli.main:app"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.0.2",
+    "ruff>=0.15.3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/relocation"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
