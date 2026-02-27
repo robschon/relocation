@@ -1,0 +1,162 @@
+import { useState, useEffect } from 'react'
+import { getRankings, getLocations, getCategories } from '../api'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts'
+
+export default function Dashboard() {
+  const [rankings, setRankings] = useState([])
+  const [view, setView] = useState('combined')
+  const [locations, setLocations] = useState([])
+  const [categories, setCategories] = useState([])
+  const [chartType, setChartType] = useState('bar')
+
+  useEffect(() => {
+    getRankings(view).then(setRankings)
+  }, [view])
+
+  useEffect(() => {
+    getLocations().then(setLocations)
+    getCategories().then(setCategories)
+  }, [])
+
+  const barData = rankings.slice(0, 10).map((r) => ({
+    name: r.location_name,
+    combined: +r.overall_score.toFixed(2),
+    husband: +r.husband_score.toFixed(2),
+    wife: +r.wife_score.toFixed(2),
+  }))
+
+  const radarData = categories.map((cat) => {
+    const entry = { category: cat.name }
+    rankings.slice(0, 5).forEach((r) => {
+      const detail = r.details?.find((d) => d.category_name === cat.name)
+      entry[r.location_name] = detail ? detail.score : 0
+    })
+    return entry
+  })
+
+  const colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6']
+
+  return (
+    <div>
+      <h1 className="text-2xl font-bold mb-4">Dashboard</h1>
+
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="text-3xl font-bold text-blue-600">{locations.length}</div>
+          <div className="text-sm text-gray-500">Total Locations</div>
+        </div>
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="text-3xl font-bold text-green-600">{rankings.length}</div>
+          <div className="text-sm text-gray-500">Ranked Locations</div>
+        </div>
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="text-3xl font-bold text-purple-600">{categories.length}</div>
+          <div className="text-sm text-gray-500">Categories</div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg shadow p-4 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Rankings</h2>
+          <div className="flex gap-2">
+            {['combined', 'husband', 'wife'].map((v) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={`px-3 py-1 text-sm rounded ${view === v ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+              >
+                {v.charAt(0).toUpperCase() + v.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b text-left text-gray-500">
+              <th className="py-2 w-12">#</th>
+              <th className="py-2">Location</th>
+              <th className="py-2">Country</th>
+              <th className="py-2 text-right">Combined</th>
+              <th className="py-2 text-right">Husband</th>
+              <th className="py-2 text-right">Wife</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rankings.map((r, i) => (
+              <tr key={r.location_name} className="border-b hover:bg-gray-50">
+                <td className="py-2 text-gray-400">{i + 1}</td>
+                <td className="py-2 font-medium">{r.location_name}</td>
+                <td className="py-2 text-gray-500">{r.country}</td>
+                <td className="py-2 text-right font-mono">{r.overall_score.toFixed(2)}</td>
+                <td className="py-2 text-right font-mono">{r.husband_score.toFixed(2)}</td>
+                <td className="py-2 text-right font-mono">{r.wife_score.toFixed(2)}</td>
+              </tr>
+            ))}
+            {rankings.length === 0 && (
+              <tr>
+                <td colSpan={6} className="py-8 text-center text-gray-400">
+                  No rankings yet. Add locations and scores to get started.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {rankings.length > 0 && (
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold">Comparison Chart</h2>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setChartType('bar')}
+                className={`px-3 py-1 text-sm rounded ${chartType === 'bar' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+              >
+                Bar
+              </button>
+              <button
+                onClick={() => setChartType('radar')}
+                className={`px-3 py-1 text-sm rounded ${chartType === 'radar' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+              >
+                Radar
+              </button>
+            </div>
+          </div>
+
+          {chartType === 'bar' ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={barData}>
+                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                <YAxis domain={[0, 10]} />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="combined" fill="#3b82f6" />
+                <Bar dataKey="husband" fill="#10b981" />
+                <Bar dataKey="wife" fill="#f59e0b" />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <ResponsiveContainer width="100%" height={400}>
+              <RadarChart data={radarData}>
+                <PolarGrid />
+                <PolarAngleAxis dataKey="category" tick={{ fontSize: 10 }} />
+                <PolarRadiusAxis domain={[0, 10]} />
+                {rankings.slice(0, 5).map((r, i) => (
+                  <Radar
+                    key={r.location_name}
+                    name={r.location_name}
+                    dataKey={r.location_name}
+                    stroke={colors[i]}
+                    fill={colors[i]}
+                    fillOpacity={0.1}
+                  />
+                ))}
+                <Legend />
+              </RadarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
