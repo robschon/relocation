@@ -9,7 +9,7 @@ export default function WeightSlider({ value, onChange, label }) {
         step={0.5}
         value={value ?? 5}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="flex-1 h-2 rounded-lg appearance-none cursor-pointer accent-purple-600"
+        className="weight-slider flex-1 h-2 rounded-lg"
       />
       <span className="text-sm font-bold text-gray-700 min-w-[2.5rem] text-center">
         {value ?? '—'}
