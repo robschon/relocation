@@ -1,15 +1,18 @@
 import { useState, useEffect } from 'react'
-import { getProfile, exportProfile } from '../api'
+import { getProfile, upsertProfile, exportProfile } from '../api'
 
 export default function Profile() {
   const [responses, setResponses] = useState([])
+  const [editingId, setEditingId] = useState(null)
+  const [editValue, setEditValue] = useState('')
+  const [saving, setSaving] = useState(false)
 
-  useEffect(() => {
-    getProfile().then(setResponses)
-  }, [])
+  const load = () => getProfile().then(setResponses)
+
+  useEffect(() => { load() }, [])
 
   const grouped = responses.reduce((acc, r) => {
-    ;(acc[r.section] = acc[r.section] || []).push(r)
+    ; (acc[r.section] = acc[r.section] || []).push(r)
     return acc
   }, {})
 
@@ -24,6 +27,33 @@ export default function Profile() {
     URL.revokeObjectURL(url)
   }
 
+  const startEdit = (item) => {
+    setEditingId(item.id)
+    setEditValue(item.answer || '')
+  }
+
+  const cancelEdit = () => {
+    setEditingId(null)
+    setEditValue('')
+  }
+
+  const saveEdit = async (item) => {
+    setSaving(true)
+    try {
+      await upsertProfile({ question_key: item.question_key, answer: editValue })
+      setEditingId(null)
+      setEditValue('')
+      await load()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleKeyDown = (e, item) => {
+    if (e.key === 'Escape') cancelEdit()
+    if (e.key === 'Enter' && e.metaKey) saveEdit(item)
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -36,6 +66,10 @@ export default function Profile() {
         </button>
       </div>
 
+      <p className="text-sm text-gray-500 mb-4">
+        Click any answer to edit it inline. Press <kbd className="px-1 py-0.5 bg-gray-100 border rounded text-xs">⌘ Enter</kbd> to save or <kbd className="px-1 py-0.5 bg-gray-100 border rounded text-xs">Esc</kbd> to cancel.
+      </p>
+
       {Object.entries(grouped).map(([section, items]) => (
         <div key={section} className="bg-white rounded-lg shadow mb-4">
           <div className="px-4 py-3 border-b bg-gray-50 font-semibold">{section}</div>
@@ -43,9 +77,42 @@ export default function Profile() {
             {items.map((item) => (
               <div key={item.id} className="px-4 py-3">
                 <p className="text-sm font-medium text-gray-600">{item.question}</p>
-                <p className="text-sm text-gray-800 mt-1">
-                  {item.answer || <span className="text-gray-400 italic">Not answered</span>}
-                </p>
+
+                {editingId === item.id ? (
+                  <div className="mt-2">
+                    <textarea
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      onKeyDown={(e) => handleKeyDown(e, item)}
+                      rows={3}
+                      autoFocus
+                      className="w-full border border-blue-400 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={() => saveEdit(item)}
+                        disabled={saving}
+                        className="bg-blue-600 text-white px-3 py-1 text-xs rounded hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {saving ? 'Saving…' : 'Save'}
+                      </button>
+                      <button
+                        onClick={cancelEdit}
+                        className="bg-gray-200 text-gray-700 px-3 py-1 text-xs rounded hover:bg-gray-300"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p
+                    className="text-sm text-gray-800 mt-1 cursor-pointer hover:bg-blue-50 rounded px-1 py-0.5 -mx-1 transition-colors"
+                    onClick={() => startEdit(item)}
+                    title="Click to edit"
+                  >
+                    {item.answer || <span className="text-gray-400 italic">Click to add answer…</span>}
+                  </p>
+                )}
               </div>
             ))}
           </div>
