@@ -8,9 +8,17 @@ export default function Dashboard() {
   const [locations, setLocations] = useState([])
   const [categories, setCategories] = useState([])
   const [chartType, setChartType] = useState('bar')
+  const [selectedLocations, setSelectedLocations] = useState(new Set())
 
   useEffect(() => {
-    getRankings(view).then(setRankings)
+    getRankings(view).then((data) => {
+      setRankings(data)
+      // Initialize selection: all locations with a non-zero score
+      setSelectedLocations((prev) => {
+        if (prev.size > 0) return prev
+        return new Set(data.filter((r) => r.overall_score > 0).map((r) => r.location_name))
+      })
+    })
   }, [view])
 
   useEffect(() => {
@@ -18,7 +26,24 @@ export default function Dashboard() {
     getCategories().then(setCategories)
   }, [])
 
-  const barData = rankings.slice(0, 10).map((r) => ({
+  const toggleLocation = (name) => {
+    setSelectedLocations((prev) => {
+      const next = new Set(prev)
+      if (next.has(name)) {
+        next.delete(name)
+      } else {
+        next.add(name)
+      }
+      return next
+    })
+  }
+
+  const selectAll = () => setSelectedLocations(new Set(rankings.map((r) => r.location_name)))
+  const selectNone = () => setSelectedLocations(new Set())
+
+  const filteredRankings = rankings.filter((r) => selectedLocations.has(r.location_name))
+
+  const barData = filteredRankings.map((r) => ({
     name: r.location_name,
     combined: +r.overall_score.toFixed(2),
     husband: +r.husband_score.toFixed(2),
@@ -27,14 +52,14 @@ export default function Dashboard() {
 
   const radarData = categories.map((cat) => {
     const entry = { category: cat.name }
-    rankings.slice(0, 5).forEach((r) => {
+    filteredRankings.forEach((r) => {
       const detail = r.details?.find((d) => d.category_name === cat.name)
       entry[r.location_name] = detail ? detail.score : 0
     })
     return entry
   })
 
-  const colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6']
+  const colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316']
 
   return (
     <div>
@@ -123,6 +148,27 @@ export default function Dashboard() {
             </div>
           </div>
 
+          {/* Location selector chips */}
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            <span className="text-xs text-gray-500 mr-1">Show:</span>
+            {rankings.map((r, i) => (
+              <button
+                key={r.location_name}
+                onClick={() => toggleLocation(r.location_name)}
+                className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${selectedLocations.has(r.location_name)
+                    ? 'text-white border-transparent'
+                    : 'bg-white text-gray-400 border-gray-300'
+                  }`}
+                style={selectedLocations.has(r.location_name) ? { backgroundColor: colors[i % colors.length] } : {}}
+              >
+                {r.location_name}
+              </button>
+            ))}
+            <span className="text-gray-300 mx-1">|</span>
+            <button onClick={selectAll} className="text-xs text-blue-600 hover:underline">All</button>
+            <button onClick={selectNone} className="text-xs text-blue-600 hover:underline">None</button>
+          </div>
+
           {chartType === 'bar' ? (
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={barData}>
@@ -141,13 +187,13 @@ export default function Dashboard() {
                 <PolarGrid />
                 <PolarAngleAxis dataKey="category" tick={{ fontSize: 10 }} />
                 <PolarRadiusAxis domain={[0, 10]} />
-                {rankings.slice(0, 5).map((r, i) => (
+                {filteredRankings.map((r, i) => (
                   <Radar
                     key={r.location_name}
                     name={r.location_name}
                     dataKey={r.location_name}
-                    stroke={colors[i]}
-                    fill={colors[i]}
+                    stroke={colors[i % colors.length]}
+                    fill={colors[i % colors.length]}
                     fillOpacity={0.1}
                   />
                 ))}
