@@ -59,7 +59,8 @@ export default function Dashboard() {
     return entry
   })
 
-  const colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316']
+  const palette = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316']
+  const colorMap = Object.fromEntries(rankings.map((r, i) => [r.location_name, palette[i % palette.length]]))
 
   return (
     <div>
@@ -156,10 +157,10 @@ export default function Dashboard() {
                 key={r.location_name}
                 onClick={() => toggleLocation(r.location_name)}
                 className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${selectedLocations.has(r.location_name)
-                    ? 'text-white border-transparent'
-                    : 'bg-white text-gray-400 border-gray-300'
+                  ? 'text-white border-transparent'
+                  : 'bg-white text-gray-400 border-gray-300'
                   }`}
-                style={selectedLocations.has(r.location_name) ? { backgroundColor: colors[i % colors.length] } : {}}
+                style={selectedLocations.has(r.location_name) ? { backgroundColor: colorMap[r.location_name] } : {}}
               >
                 {r.location_name}
               </button>
@@ -187,13 +188,13 @@ export default function Dashboard() {
                 <PolarGrid />
                 <PolarAngleAxis dataKey="category" tick={{ fontSize: 10 }} />
                 <PolarRadiusAxis domain={[0, 10]} />
-                {filteredRankings.map((r, i) => (
+                {filteredRankings.map((r) => (
                   <Radar
                     key={r.location_name}
                     name={r.location_name}
                     dataKey={r.location_name}
-                    stroke={colors[i % colors.length]}
-                    fill={colors[i % colors.length]}
+                    stroke={colorMap[r.location_name]}
+                    fill={colorMap[r.location_name]}
                     fillOpacity={0.1}
                   />
                 ))}
