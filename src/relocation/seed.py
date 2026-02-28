@@ -31,14 +31,14 @@ SEED_CATEGORIES = [
         "description": "Income tax, property tax, estate tax, US tax obligations, tax treaties",
     },
     {
-        "name": "Safety / stability",
+        "name": "Safety / stability / values",
         "sort_order": 6,
-        "description": "Crime rates, political stability, natural disaster preparedness",
+        "description": "Crime rates, political stability, natural disaster preparedness, LGBTQ+ rights, progressiveness, diversity and pluralism",
     },
     {
-        "name": "Language / cultural accessibility",
+        "name": "Language & community",
         "sort_order": 7,
-        "description": "Ease of daily life without local language, cultural openness to foreigners",
+        "description": "Language accessibility, cultural openness to foreigners, expat community size, English prevalence, social integration ease",
     },
     {
         "name": "Walkability / public transit",
@@ -66,9 +66,9 @@ SEED_CATEGORIES = [
         "description": "Scenery, parks, beaches, hiking, nature access",
     },
     {
-        "name": "Expat community / English prevalence",
+        "name": "Environmental quality & climate risk",
         "sort_order": 13,
-        "description": "Size of expat community, English widely spoken, social integration ease",
+        "description": "Air quality, clean drinking water availability, pollution levels, climate change vulnerability (sea level rise, extreme weather trends, drought risk). Distinct from Climate/weather which covers day-to-day temperatures and seasons.",
     },
 ]
 
