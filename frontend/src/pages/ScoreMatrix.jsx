@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { getLocations, getCategories, getScores, upsertScore } from '../api'
+import { getLocations, getCategories, getScores, upsertScore, getRankings } from '../api'
+import { sortLocationsByOverallRank } from '../utils/rankings'
 
 function scoreColor(score) {
   if (!score) return 'bg-gray-100 text-gray-400'
@@ -17,8 +18,8 @@ export default function ScoreMatrix() {
   const [editValue, setEditValue] = useState('')
 
   const load = async () => {
-    const [locs, cats, sc] = await Promise.all([getLocations(), getCategories(), getScores()])
-    setLocations(locs)
+    const [locs, cats, sc, rankings] = await Promise.all([getLocations(), getCategories(), getScores(), getRankings('combined')])
+    setLocations(sortLocationsByOverallRank(locs, rankings))
     setCategories(cats)
     setScores(sc)
   }

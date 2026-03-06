@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { getResearch, createResearch, deleteResearch, getLocations, getCategories } from '../api'
+import { getResearch, createResearch, deleteResearch, getLocations, getCategories, getRankings } from '../api'
+import { sortLocationsByOverallRank } from '../utils/rankings'
 
 export default function Research() {
   const [research, setResearch] = useState([])
@@ -15,13 +16,14 @@ export default function Research() {
     const params = {}
     if (filterLocation) params.location_id = filterLocation
     if (filterCategory) params.category_id = filterCategory
-    const [res, locs, cats] = await Promise.all([
+    const [res, locs, cats, rankings] = await Promise.all([
       getResearch(params),
       getLocations(),
       getCategories(),
+      getRankings('combined'),
     ])
     setResearch(res)
-    setLocations(locs)
+    setLocations(sortLocationsByOverallRank(locs, rankings))
     setCategories(cats)
   }
 
