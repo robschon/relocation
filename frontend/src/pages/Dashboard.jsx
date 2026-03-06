@@ -206,17 +206,30 @@ export default function Dashboard() {
       )}
 
       {rankings.length > 0 && (() => {
-        const divergent = [...rankings]
-          .map((r) => ({ ...r, diff: r.husband_score - r.wife_score }))
-          .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))
-          .slice(0, 5)
+        const withDiff = rankings.map((r) => ({ ...r, diff: r.husband_score - r.wife_score }))
+        const husbandHigher = [...withDiff].sort((a, b) => b.diff - a.diff).slice(0, 3).filter((r) => r.diff > 0)
+        const wifeHigher = [...withDiff].sort((a, b) => a.diff - b.diff).slice(0, 3).filter((r) => r.diff < 0)
+        const divergent = [...husbandHigher, ...wifeHigher]
+        if (divergent.length === 0) return null
+
+        const DiffRow = ({ r }) => (
+          <tr className="border-b hover:bg-gray-50">
+            <td className="py-2 font-medium">{r.location_name}</td>
+            <td className="py-2 text-gray-500">{r.country}</td>
+            <td className="py-2 text-right font-mono">{r.husband_score.toFixed(2)}</td>
+            <td className="py-2 text-right font-mono">{r.wife_score.toFixed(2)}</td>
+            <td className={`py-2 text-right font-mono font-bold ${r.diff > 0 ? 'text-green-600' : 'text-amber-600'}`}>
+              {r.diff > 0 ? '+' : ''}{r.diff.toFixed(2)}
+            </td>
+          </tr>
+        )
+
         return (
           <div className="bg-white rounded-lg shadow p-4 mt-6">
             <h2 className="text-lg font-semibold mb-4">Biggest Score Differences</h2>
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-gray-500">
-                  <th className="py-2 w-12">#</th>
                   <th className="py-2">Location</th>
                   <th className="py-2">Country</th>
                   <th className="py-2 text-right">Husband</th>
@@ -225,23 +238,20 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {divergent.map((r, i) => (
-                  <tr key={r.location_name} className="border-b hover:bg-gray-50">
-                    <td className="py-2 text-gray-400">{i + 1}</td>
-                    <td className="py-2 font-medium">{r.location_name}</td>
-                    <td className="py-2 text-gray-500">{r.country}</td>
-                    <td className="py-2 text-right font-mono">{r.husband_score.toFixed(2)}</td>
-                    <td className="py-2 text-right font-mono">{r.wife_score.toFixed(2)}</td>
-                    <td className={`py-2 text-right font-mono font-bold ${r.diff > 0 ? 'text-green-600' : r.diff < 0 ? 'text-amber-600' : 'text-gray-500'}`}>
-                      {r.diff > 0 ? '+' : ''}{r.diff.toFixed(2)}
-                    </td>
-                  </tr>
-                ))}
+                {husbandHigher.length > 0 && (
+                  <>
+                    <tr><td colSpan={5} className="pt-3 pb-1 text-xs font-semibold text-green-700">Husband scores higher</td></tr>
+                    {husbandHigher.map((r) => <DiffRow key={r.location_name} r={r} />)}
+                  </>
+                )}
+                {wifeHigher.length > 0 && (
+                  <>
+                    <tr><td colSpan={5} className="pt-3 pb-1 text-xs font-semibold text-amber-700">Wife scores higher</td></tr>
+                    {wifeHigher.map((r) => <DiffRow key={r.location_name} r={r} />)}
+                  </>
+                )}
               </tbody>
             </table>
-            <p className="text-xs text-gray-400 mt-2">
-              <span className="text-green-600">+</span> = husband scores higher, <span className="text-amber-600">&minus;</span> = wife scores higher
-            </p>
           </div>
         )
       })()}
