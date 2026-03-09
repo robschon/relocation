@@ -9,6 +9,7 @@ import Research from './pages/Research'
 import ProsCons from './pages/ProsCons'
 import Visa from './pages/Visa'
 import Profile from './pages/Profile'
+import OceanTemperatures from './pages/OceanTemperatures'
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
         <Route path="/research" element={<Research />} />
         <Route path="/pros-cons" element={<ProsCons />} />
         <Route path="/visa" element={<Visa />} />
+        <Route path="/ocean-temperatures" element={<OceanTemperatures />} />
         <Route path="/profile" element={<Profile />} />
       </Route>
     </Routes>

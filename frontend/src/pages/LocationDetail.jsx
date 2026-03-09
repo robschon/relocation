@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getLocation, updateLocation, getLocationScores, upsertScore, getLocationProsCons, createProCon, deleteProCon, getCategories, getResearch } from '../api'
+import { getLocation, updateLocation, getLocationScores, upsertScore, getLocationProsCons, createProCon, deleteProCon, getCategories, getResearch, exportLocationResearchMarkdown } from '../api'
 import ScoreSlider from '../components/ScoreSlider'
 
 export default function LocationDetail() {
@@ -14,6 +14,10 @@ export default function LocationDetail() {
   const [editing, setEditing] = useState(false)
   const [editForm, setEditForm] = useState({})
   const [newProCon, setNewProCon] = useState({ type: 'pro', content: '', category_id: '' })
+  const [showResearchMarkdown, setShowResearchMarkdown] = useState(false)
+  const [researchMarkdown, setResearchMarkdown] = useState('')
+  const [researchMarkdownLoading, setResearchMarkdownLoading] = useState(false)
+  const [researchMarkdownError, setResearchMarkdownError] = useState('')
 
   const load = async () => {
     const [loc, sc, cats, pc, res] = await Promise.all([
@@ -31,7 +35,12 @@ export default function LocationDetail() {
     setEditForm({ name: loc.name, country: loc.country, region: loc.region || '', population: loc.population || '', description: loc.description || '' })
   }
 
-  useEffect(() => { load() }, [id])
+  useEffect(() => {
+    setShowResearchMarkdown(false)
+    setResearchMarkdown('')
+    setResearchMarkdownError('')
+    void load()
+  }, [id])
 
   const handleSave = async () => {
     await updateLocation(id, {
@@ -66,9 +75,48 @@ export default function LocationDetail() {
     load()
   }
 
+  const handleToggleResearchMarkdown = async () => {
+    if (showResearchMarkdown) {
+      setShowResearchMarkdown(false)
+      return
+    }
+
+    if (!researchMarkdown) {
+      setResearchMarkdownLoading(true)
+      setResearchMarkdownError('')
+      try {
+        const markdown = await exportLocationResearchMarkdown(id)
+        setResearchMarkdown(markdown)
+      } catch (error) {
+        setResearchMarkdownError(error.message || 'Failed to load research markdown document.')
+        setResearchMarkdownLoading(false)
+        return
+      }
+      setResearchMarkdownLoading(false)
+    }
+
+    setShowResearchMarkdown(true)
+  }
+
   if (!location) return <div className="text-gray-400">Loading...</div>
 
   const scoreMap = Object.fromEntries(scores.map((s) => [s.category_id, s.score]))
+  const categoryNameById = Object.fromEntries(categories.map((cat) => [cat.id, cat.name]))
+  const categoryOrderById = Object.fromEntries(categories.map((cat, idx) => [cat.id, idx]))
+  const researchSectionsMap = research.reduce((acc, entry) => {
+    const key = entry.category_id ?? 'uncategorized'
+    if (!acc[key]) {
+      const categoryName = entry.category_id ? (categoryNameById[entry.category_id] || `Category #${entry.category_id}`) : 'General'
+      acc[key] = { key, categoryName, entries: [] }
+    }
+    acc[key].entries.push(entry)
+    return acc
+  }, {})
+  const researchSections = Object.values(researchSectionsMap).sort((a, b) => {
+    if (a.key === 'uncategorized') return 1
+    if (b.key === 'uncategorized') return -1
+    return (categoryOrderById[a.key] ?? 999) - (categoryOrderById[b.key] ?? 999)
+  })
   const pros = prosCons.filter((p) => p.type === 'pro')
   const cons = prosCons.filter((p) => p.type === 'con')
 
@@ -101,7 +149,12 @@ export default function LocationDetail() {
             </div>
           )}
           {!editing && (
-            <button onClick={() => setEditing(true)} className="text-sm text-blue-600 hover:underline">Edit</button>
+            <div className="flex flex-col items-end gap-1">
+              <button onClick={handleToggleResearchMarkdown} className="text-sm text-blue-600 hover:underline">
+                {showResearchMarkdown ? 'Hide Markdown Research' : 'Show Markdown Research'}
+              </button>
+              <button onClick={() => setEditing(true)} className="text-sm text-blue-600 hover:underline">Edit</button>
+            </div>
           )}
         </div>
       </div>
@@ -162,15 +215,35 @@ export default function LocationDetail() {
       {research.length > 0 && (
         <div className="bg-white rounded-lg shadow p-4 mt-6">
           <h2 className="text-lg font-semibold mb-4">Research Notes</h2>
-          <div className="space-y-3">
-            {research.map((r) => (
-              <div key={r.id} className="border rounded p-3 text-sm">
-                <p className="text-gray-700">{r.content}</p>
-                {r.source && <p className="text-xs text-blue-500 mt-1">Source: {r.source}</p>}
-                <p className="text-xs text-gray-400 mt-1">{new Date(r.created_at).toLocaleDateString()}</p>
+          <div className="space-y-4">
+            {researchSections.map((section) => (
+              <div key={section.key} className="border rounded p-3">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">{section.categoryName}</h3>
+                <div className="space-y-3">
+                  {section.entries.map((r) => (
+                    <div key={r.id} className="text-sm">
+                      <p className="text-gray-700">{r.content}</p>
+                      {r.source && <p className="text-xs text-blue-500 mt-1">Source: {r.source}</p>}
+                      <p className="text-xs text-gray-400 mt-1">{new Date(r.created_at).toLocaleDateString()}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {showResearchMarkdown && (
+        <div className="bg-white rounded-lg shadow p-4 mt-6">
+          <h2 className="text-lg font-semibold mb-3">Research Markdown Document</h2>
+          {researchMarkdownLoading && <p className="text-sm text-gray-500">Loading markdown document...</p>}
+          {researchMarkdownError && <p className="text-sm text-red-600">{researchMarkdownError}</p>}
+          {!researchMarkdownLoading && !researchMarkdownError && (
+            <pre className="text-xs text-gray-700 bg-gray-50 border rounded p-3 overflow-auto max-h-[70vh] whitespace-pre-wrap">
+              {researchMarkdown}
+            </pre>
+          )}
         </div>
       )}
     </div>

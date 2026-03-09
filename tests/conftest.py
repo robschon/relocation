@@ -25,9 +25,11 @@ def db_session():
 
 
 @pytest.fixture
-def client(db_session):
+def client(db_session, monkeypatch):
     """FastAPI test client with overridden DB dependency."""
     from relocation.api.app import app
+
+    monkeypatch.setenv("RELOCATION_AUTO_ENRICH_NEW_LOCATIONS", "0")
 
     def override_get_db():
         yield db_session

@@ -70,6 +70,11 @@ SEED_CATEGORIES = [
         "sort_order": 13,
         "description": "Air quality, clean drinking water availability, pollution levels, climate change vulnerability (sea level rise, extreme weather trends, drought risk). Distinct from Climate/weather which covers day-to-day temperatures and seasons.",
     },
+    {
+        "name": "Year-round swimming viability",
+        "sort_order": 14,
+        "description": "Derived from monthly ocean temperature: higher scores indicate more months comfortable for swimming.",
+    },
 ]
 
 SEED_LOCATIONS = [

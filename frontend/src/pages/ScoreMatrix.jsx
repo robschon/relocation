@@ -3,7 +3,7 @@ import { getLocations, getCategories, getScores, upsertScore, getRankings } from
 import { sortLocationsByOverallRank } from '../utils/rankings'
 
 function scoreColor(score) {
-  if (!score) return 'bg-gray-100 text-gray-400'
+  if (score === null || score === undefined) return 'bg-gray-100 text-gray-400'
   if (score <= 3) return 'bg-red-100 text-red-800'
   if (score <= 5) return 'bg-yellow-100 text-yellow-800'
   if (score <= 7) return 'bg-green-100 text-green-800'
@@ -34,12 +34,12 @@ export default function ScoreMatrix() {
   const handleEdit = (locId, catId) => {
     const current = getScore(locId, catId)
     setEditingCell(`${locId}-${catId}`)
-    setEditValue(current || '')
+    setEditValue(current ?? '')
   }
 
   const handleSave = async (locId, catId) => {
     const val = Number(editValue)
-    if (val >= 1 && val <= 10) {
+    if (val >= 0 && val <= 10) {
       await upsertScore({ location_id: locId, category_id: catId, score: val })
       await load()
     }
@@ -72,7 +72,7 @@ export default function ScoreMatrix() {
                     <td key={cat.id} className="py-1 px-1 text-center">
                       {editingCell === cellKey ? (
                         <input
-                          type="number" min={1} max={10} value={editValue}
+                          type="number" min={0} max={10} value={editValue}
                           onChange={(e) => setEditValue(e.target.value)}
                           onBlur={() => handleSave(loc.id, cat.id)}
                           onKeyDown={(e) => e.key === 'Enter' && handleSave(loc.id, cat.id)}
@@ -84,7 +84,7 @@ export default function ScoreMatrix() {
                           onClick={() => handleEdit(loc.id, cat.id)}
                           className={`w-10 h-8 rounded text-sm font-mono font-bold ${scoreColor(score)}`}
                         >
-                          {score || '—'}
+                          {score ?? '—'}
                         </button>
                       )}
                     </td>

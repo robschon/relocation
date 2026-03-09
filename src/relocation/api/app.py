@@ -29,7 +29,9 @@ app.add_middleware(
 
 from relocation.api.routers import (  # noqa: E402
     categories,
+    full_research,
     locations,
+    ocean_temperatures,
     profile,
     pros_cons,
     rankings,
@@ -41,6 +43,7 @@ from relocation.api.routers import (  # noqa: E402
 )
 
 app.include_router(locations.router, prefix="/api/v1")
+app.include_router(ocean_temperatures.router, prefix="/api/v1")
 app.include_router(categories.router, prefix="/api/v1")
 app.include_router(scores.router, prefix="/api/v1")
 app.include_router(weights.router, prefix="/api/v1")
@@ -50,3 +53,4 @@ app.include_router(visa.router, prefix="/api/v1")
 app.include_router(profile.router, prefix="/api/v1")
 app.include_router(rankings.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
+app.include_router(full_research.router, prefix="/api/v1")

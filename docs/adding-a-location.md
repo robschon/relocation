@@ -251,7 +251,7 @@ Guidelines:
 
 ### 6. (Optional) Run AI research script
 
-Populates the `research` and `visa_info` database tables with AI-generated structured data. Requires the API server to be running.
+Populates the `research` and `visa_info` database tables with AI-generated structured data, and now also writes a bespoke one-sentence location description to `locations.description` (glossy card copy). Requires the API server to be running.
 
 ```bash
 # Start the API server (in another terminal)
@@ -267,11 +267,33 @@ uv run python scripts/research_location_openai.py "<City>" --force
 # Research a single category
 uv run python scripts/research_location_openai.py "<City>" --category "Cost"
 
+# Skip bespoke description generation
+uv run python scripts/research_location_openai.py "<City>" --skip-description
+
+# Overwrite an existing description with a new bespoke one
+uv run python scripts/research_location_openai.py "<City>" --force-description
+
 # Optional: Claude version (requires ANTHROPIC_API_KEY)
 uv run python scripts/research_location.py "<City>"
+uv run python scripts/research_location.py "<City>" --skip-description
+uv run python scripts/research_location.py "<City>" --force-description
 ```
 
-### 7. Verify
+### 7. Bespoke description quality check
+
+After script run, sanity-check the card copy in DB:
+
+```bash
+sqlite3 data/relocation.db "SELECT description FROM locations WHERE name = '<City>';"
+```
+
+Quality bar:
+- One sentence, ~28-42 words
+- Glossy travel-mag voice with concrete place cues
+- No numeric score notation (no `X/10`)
+- Sounds distinct from other locations (not formulaic)
+
+### 8. Verify
 
 ```bash
 # Location details and all scores
@@ -291,6 +313,9 @@ sqlite3 data/relocation.db "SELECT COUNT(*) FROM research WHERE location_id = (S
 
 # Pros/cons — should be ~16 (roughly 8 pros + 8 cons)
 sqlite3 data/relocation.db "SELECT type, COUNT(*) FROM pros_cons WHERE location_id = (SELECT id FROM locations WHERE name = '<City>') GROUP BY type;"
+
+# Description exists and is non-empty
+sqlite3 data/relocation.db "SELECT COUNT(*) FROM locations WHERE name = '<City>' AND description IS NOT NULL AND trim(description) <> '';"
 ```
 
 ## The 13 Scoring Categories

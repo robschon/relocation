@@ -20,10 +20,31 @@ def test_create_location(client):
     assert len(resp.json()) == 5
 
 
+def test_create_location_triggers_enrichment_when_enabled(client, monkeypatch):
+    from relocation.api.routers import locations as locations_router
+
+    calls: list[int] = []
+
+    def fake_pipeline(location_id: int) -> None:
+        calls.append(location_id)
+
+    monkeypatch.setenv("RELOCATION_AUTO_ENRICH_NEW_LOCATIONS", "1")
+    monkeypatch.setattr(locations_router, "run_location_post_create_pipeline", fake_pipeline)
+
+    resp = client.post("/api/v1/locations", json={
+        "name": "Setubal",
+        "country": "Portugal",
+        "region": "Europe",
+    })
+
+    assert resp.status_code == 201
+    assert calls == [resp.json()["id"]]
+
+
 def test_list_categories(client):
     resp = client.get("/api/v1/categories")
     assert resp.status_code == 200
-    assert len(resp.json()) == 13
+    assert len(resp.json()) == 14
 
 
 def test_upsert_score(client):
@@ -53,6 +74,21 @@ def test_upsert_score(client):
     assert resp.status_code == 201
     assert resp.json()["score"] == 9
     assert resp.json()["notes"] == "updated"
+
+
+def test_upsert_score_allows_zero(client):
+    locs = client.get("/api/v1/locations").json()
+    cats = client.get("/api/v1/categories").json()
+    loc_id = locs[0]["id"]
+    cat_id = cats[0]["id"]
+
+    resp = client.post("/api/v1/scores", json={
+        "location_id": loc_id,
+        "category_id": cat_id,
+        "score": 0,
+    })
+    assert resp.status_code == 201
+    assert resp.json()["score"] == 0
 
 
 def test_rankings(client):

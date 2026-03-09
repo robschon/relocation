@@ -10,6 +10,24 @@ from relocation.schemas import VisaCreate, VisaOut, VisaUpdate
 router = APIRouter(tags=["visa"])
 
 
+def _validate_visa_evidence(info: VisaInfo) -> None:
+    if not info.source_urls:
+        raise HTTPException(
+            status_code=422,
+            detail="Visa entries require at least one source URL.",
+        )
+    if not info.source_checked_at:
+        raise HTTPException(
+            status_code=422,
+            detail="Visa entries require source_checked_at.",
+        )
+    if info.verification_status == "verified" and info.confidence is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Verified visa entries require confidence between 0 and 1.",
+        )
+
+
 @router.get("/visa", response_model=list[VisaOut])
 def list_visa(country: Optional[str] = None, db: Session = Depends(get_db)):
     query = db.query(VisaInfo)
@@ -29,6 +47,7 @@ def get_visa(visa_id: int, db: Session = Depends(get_db)):
 @router.post("/visa", response_model=VisaOut, status_code=201)
 def create_visa(data: VisaCreate, db: Session = Depends(get_db)):
     info = VisaInfo(**data.model_dump())
+    _validate_visa_evidence(info)
     db.add(info)
     db.commit()
     db.refresh(info)
@@ -42,6 +61,7 @@ def update_visa(visa_id: int, data: VisaUpdate, db: Session = Depends(get_db)):
         raise HTTPException(404, "Visa info not found")
     for key, val in data.model_dump(exclude_unset=True).items():
         setattr(info, key, val)
+    _validate_visa_evidence(info)
     db.commit()
     db.refresh(info)
     return info

@@ -21,6 +21,8 @@ export const getLocation = (id) => request(`${BASE}/locations/${id}`)
 export const createLocation = (data) => request(`${BASE}/locations`, { method: 'POST', body: JSON.stringify(data) })
 export const updateLocation = (id, data) => request(`${BASE}/locations/${id}`, { method: 'PUT', body: JSON.stringify(data) })
 export const deleteLocation = (id) => request(`${BASE}/locations/${id}`, { method: 'DELETE' })
+export const startLocationFullResearch = (id) => request(`${BASE}/locations/${id}/full-research`, { method: 'POST' })
+export const getFullResearchJob = (jobId) => request(`${BASE}/full-research-jobs/${jobId}`)
 
 // Categories
 export const getCategories = () => request(`${BASE}/categories`)
@@ -49,6 +51,7 @@ export const getResearch = (params = {}) => {
 export const getResearchEntry = (id) => request(`${BASE}/research/${id}`)
 export const createResearch = (data) => request(`${BASE}/research`, { method: 'POST', body: JSON.stringify(data) })
 export const deleteResearch = (id) => request(`${BASE}/research/${id}`, { method: 'DELETE' })
+export const exportLocationResearchMarkdown = (locationId) => request(`${BASE}/locations/${locationId}/research-markdown`)
 
 // Pros/Cons
 export const getProsCons = (params = {}) => {
@@ -58,6 +61,16 @@ export const getProsCons = (params = {}) => {
 export const getLocationProsCons = (locationId) => request(`${BASE}/locations/${locationId}/pros-cons`)
 export const createProCon = (data) => request(`${BASE}/pros-cons`, { method: 'POST', body: JSON.stringify(data) })
 export const deleteProCon = (id) => request(`${BASE}/pros-cons/${id}`, { method: 'DELETE' })
+
+// Ocean temperatures
+export const getOceanTemperatures = (params = {}) => {
+  const qs = new URLSearchParams(params).toString()
+  return request(`${BASE}/ocean-temperatures${qs ? '?' + qs : ''}`)
+}
+export const getLocationOceanTemperatures = (locationId, params = {}) => {
+  const qs = new URLSearchParams(params).toString()
+  return request(`${BASE}/locations/${locationId}/ocean-temperatures${qs ? '?' + qs : ''}`)
+}
 
 // Visa
 export const getVisas = (params = {}) => {

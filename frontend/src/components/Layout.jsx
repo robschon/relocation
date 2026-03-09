@@ -8,6 +8,7 @@ const links = [
   { to: '/research', label: 'Research' },
   { to: '/pros-cons', label: 'Pros & Cons' },
   { to: '/visa', label: 'Visa Info' },
+  { to: '/ocean-temperatures', label: 'Ocean Temps' },
   { to: '/profile', label: 'Profile' },
 ]
 
@@ -16,7 +17,7 @@ export default function Layout() {
     <div className="flex min-h-screen bg-gray-50">
       <nav className="w-56 bg-gray-900 text-white flex-shrink-0">
         <div className="p-4 text-lg font-bold border-b border-gray-700">
-          Relocation Planner
+          Relocation Assistant
         </div>
         <ul className="mt-2">
           {links.map(({ to, label }) => (

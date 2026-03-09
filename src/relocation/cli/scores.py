@@ -16,12 +16,12 @@ app = typer.Typer(help="Manage location scores.")
 def set(
     location: str = typer.Argument(help="Location ID or name substring"),
     category: str = typer.Argument(help="Category ID or name substring"),
-    score: int = typer.Argument(help="Score (1-10)"),
+    score: int = typer.Argument(help="Score (0-10)"),
     notes: Optional[str] = typer.Option(None, help="Notes about this score"),
 ):
     """Set a score for a location/category (creates or updates)."""
-    if score < 1 or score > 10:
-        console.print("[red]Score must be between 1 and 10[/red]")
+    if score < 0 or score > 10:
+        console.print("[red]Score must be between 0 and 10[/red]")
         raise typer.Exit(1)
 
     with SessionLocal() as session:
@@ -110,7 +110,7 @@ def matrix():
         row = [loc.name]
         for cat in categories:
             val = scores.get((loc.id, cat.id))
-            row.append(str(val) if val else "·")
+            row.append(str(val) if val is not None else "·")
         table.add_row(*row)
 
     console.print(table)

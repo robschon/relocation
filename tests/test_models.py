@@ -8,7 +8,7 @@ def test_seed_data_present(db_session):
     assert {u.name for u in users} == {"husband", "wife"}
 
     categories = db_session.query(Category).all()
-    assert len(categories) == 13
+    assert len(categories) == 14
 
     locations = db_session.query(Location).all()
     assert len(locations) == 4
@@ -17,7 +17,7 @@ def test_seed_data_present(db_session):
     assert "Lima" in names
 
     weights = db_session.query(Weight).all()
-    assert len(weights) == 26  # 2 users * 13 categories
+    assert len(weights) == 28  # 2 users * 14 categories
 
 
 def test_score_creation(db_session):

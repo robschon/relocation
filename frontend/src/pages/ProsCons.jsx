@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { getLocations, getProsCons, createProCon, deleteProCon, getCategories } from '../api'
+import { getLocations, getProsCons, createProCon, deleteProCon, getCategories, getRankings } from '../api'
+import { sortLocationsByOverallRank } from '../utils/rankings'
 
 export default function ProsCons() {
   const [locations, setLocations] = useState([])
@@ -8,8 +9,8 @@ export default function ProsCons() {
   const [newItems, setNewItems] = useState({})
 
   const load = async () => {
-    const [locs, pc, cats] = await Promise.all([getLocations(), getProsCons(), getCategories()])
-    setLocations(locs)
+    const [locs, pc, cats, rankings] = await Promise.all([getLocations(), getProsCons(), getCategories(), getRankings('combined')])
+    setLocations(sortLocationsByOverallRank(locs, rankings))
     setProsCons(pc)
     setCategories(cats)
   }

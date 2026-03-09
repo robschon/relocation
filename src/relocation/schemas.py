@@ -1,7 +1,9 @@
-from datetime import datetime
-from typing import Optional
+from datetime import date, datetime
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
+
+VerificationStatus = Literal["verified", "needs_review", "stale"]
 
 
 # --- Locations ---
@@ -11,6 +13,8 @@ class LocationCreate(BaseModel):
     name: str
     country: str
     region: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     population: Optional[int] = None
     description: Optional[str] = None
     notes: Optional[str] = None
@@ -20,6 +24,8 @@ class LocationUpdate(BaseModel):
     name: Optional[str] = None
     country: Optional[str] = None
     region: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     population: Optional[int] = None
     description: Optional[str] = None
     notes: Optional[str] = None
@@ -30,6 +36,8 @@ class LocationOut(BaseModel):
     name: str
     country: str
     region: Optional[str]
+    latitude: Optional[float]
+    longitude: Optional[float]
     population: Optional[int]
     description: Optional[str]
     notes: Optional[str]
@@ -57,7 +65,7 @@ class CategoryOut(BaseModel):
 class ScoreCreate(BaseModel):
     location_id: int
     category_id: int
-    score: int = Field(ge=1, le=10)
+    score: int = Field(ge=0, le=10)
     notes: Optional[str] = None
 
 
@@ -101,6 +109,11 @@ class ResearchCreate(BaseModel):
     category_id: Optional[int] = None
     content: str
     source: Optional[str] = None
+    source_published_at: Optional[date] = None
+    source_urls: Optional[list[str]] = None
+    source_checked_at: Optional[date] = None
+    verification_status: VerificationStatus = "needs_review"
+    confidence: Optional[float] = Field(default=None, ge=0, le=1)
 
 
 class ResearchOut(BaseModel):
@@ -109,6 +122,11 @@ class ResearchOut(BaseModel):
     category_id: Optional[int]
     content: str
     source: Optional[str]
+    source_published_at: Optional[date]
+    source_urls: Optional[list[str]]
+    source_checked_at: Optional[date]
+    verification_status: VerificationStatus
+    confidence: Optional[float]
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -147,6 +165,11 @@ class VisaCreate(BaseModel):
     timeline: Optional[str] = None
     cost: Optional[str] = None
     notes: Optional[str] = None
+    source_urls: Optional[list[str]] = None
+    source_published_at: Optional[date] = None
+    source_checked_at: Optional[date] = None
+    verification_status: VerificationStatus = "needs_review"
+    confidence: Optional[float] = Field(default=None, ge=0, le=1)
 
 
 class VisaUpdate(BaseModel):
@@ -156,6 +179,11 @@ class VisaUpdate(BaseModel):
     timeline: Optional[str] = None
     cost: Optional[str] = None
     notes: Optional[str] = None
+    source_urls: Optional[list[str]] = None
+    source_published_at: Optional[date] = None
+    source_checked_at: Optional[date] = None
+    verification_status: Optional[VerificationStatus] = None
+    confidence: Optional[float] = Field(default=None, ge=0, le=1)
 
 
 class VisaOut(BaseModel):
@@ -168,6 +196,11 @@ class VisaOut(BaseModel):
     timeline: Optional[str]
     cost: Optional[str]
     notes: Optional[str]
+    source_urls: Optional[list[str]]
+    source_published_at: Optional[date]
+    source_checked_at: Optional[date]
+    verification_status: VerificationStatus
+    confidence: Optional[float]
     created_at: datetime
     updated_at: datetime
 
@@ -221,3 +254,29 @@ class RankingOut(BaseModel):
     husband_score: float
     wife_score: float
     details: list[CategoryDetailOut]
+
+
+# --- Ocean temperatures ---
+
+
+class OceanTemperatureMonthlyOut(BaseModel):
+    id: int
+    location_id: int
+    month: int
+    avg_temp_c: float
+    min_temp_c: Optional[float]
+    max_temp_c: Optional[float]
+    sample_count: int
+    baseline_start_year: int
+    baseline_end_year: int
+    source_dataset: str
+    source_url: Optional[str]
+    source_checked_at: date
+    grid_lat: Optional[float]
+    grid_lon: Optional[float]
+    grid_distance_km: Optional[float]
+    quality_flag: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { getRankings, getLocations, getCategories } from '../api'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts'
 
@@ -61,6 +62,11 @@ export default function Dashboard() {
 
   const palette = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316']
   const colorMap = Object.fromEntries(rankings.map((r, i) => [r.location_name, palette[i % palette.length]]))
+  const locationIdByKey = Object.fromEntries(
+    locations.map((loc) => [`${loc.name.trim().toLowerCase()}::${loc.country.trim().toLowerCase()}`, loc.id]),
+  )
+  const locationIdForRanking = (ranking) =>
+    locationIdByKey[`${ranking.location_name.trim().toLowerCase()}::${ranking.country.trim().toLowerCase()}`]
 
   return (
     <div>
@@ -111,7 +117,15 @@ export default function Dashboard() {
             {rankings.map((r, i) => (
               <tr key={r.location_name} className="border-b hover:bg-gray-50">
                 <td className="py-2 text-gray-400">{i + 1}</td>
-                <td className="py-2 font-medium">{r.location_name}</td>
+                <td className="py-2 font-medium">
+                  {locationIdForRanking(r) ? (
+                    <Link to={`/locations/${locationIdForRanking(r)}`} className="text-blue-700 hover:underline">
+                      {r.location_name}
+                    </Link>
+                  ) : (
+                    r.location_name
+                  )}
+                </td>
                 <td className="py-2 text-gray-500">{r.country}</td>
                 <td className="py-2 text-right font-mono">{r.overall_score.toFixed(2)}</td>
                 <td className="py-2 text-right font-mono">{r.husband_score.toFixed(2)}</td>
