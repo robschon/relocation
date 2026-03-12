@@ -99,6 +99,32 @@ function scoreBadgeClasses(score) {
   return 'bg-rose-100 text-rose-800'
 }
 
+function formatFullResearchBadge(value) {
+  if (!value) return null
+  const normalized = /(?:Z|[+-]\d{2}:\d{2})$/.test(value) ? value : `${value}Z`
+  const parsed = new Date(normalized)
+  if (Number.isNaN(parsed.getTime())) return null
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(parsed)
+}
+
+function formatFullResearchTitle(value) {
+  if (!value) return ''
+  const normalized = /(?:Z|[+-]\d{2}:\d{2})$/.test(value) ? value : `${value}Z`
+  const parsed = new Date(normalized)
+  if (Number.isNaN(parsed.getTime())) return ''
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(parsed)
+}
+
 export default function Locations() {
   const [locations, setLocations] = useState([])
   const [researchJobs, setResearchJobs] = useState({})
@@ -173,7 +199,7 @@ export default function Locations() {
     if (current && (current.status === 'running' || current.status === 'queued')) return
 
     try {
-      const job = await startLocationFullResearch(loc.id)
+      const job = await startLocationFullResearch(loc.id, { forceResearch: true })
       setResearchJobs((prev) => ({ ...prev, [loc.id]: job }))
       setActiveLogLocationId(loc.id)
       void pollFullResearchJob(loc.id, job.id)
@@ -279,6 +305,8 @@ export default function Locations() {
           const job = researchJobs[loc.id]
           const isRunning = job?.status === 'running' || job?.status === 'queued'
           const flagEmoji = flagEmojiForCountry(loc.country)
+          const fullResearchBadge = formatFullResearchBadge(loc.full_research_ran_at)
+          const fullResearchTitle = formatFullResearchTitle(loc.full_research_ran_at)
           return (
             <div
               key={loc.id}
@@ -300,6 +328,14 @@ export default function Locations() {
                       </span>
                     </div>
                     <p className="text-sm text-gray-500">{loc.country}{loc.region ? `, ${loc.region}` : ''}</p>
+                    {fullResearchBadge && (
+                      <div
+                        className="mt-2 inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700"
+                        title={`Last full research run: ${fullResearchTitle}`}
+                      >
+                        Full research {fullResearchBadge}
+                      </div>
+                    )}
                   </div>
                   <div className="flex flex-col items-end gap-1">
                     <button

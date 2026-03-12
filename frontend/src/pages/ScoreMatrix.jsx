@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { getLocations, getCategories, getScores, upsertScore, getRankings } from '../api'
 import { sortLocationsByOverallRank } from '../utils/rankings'
 
@@ -14,6 +14,7 @@ export default function ScoreMatrix() {
   const [locations, setLocations] = useState([])
   const [categories, setCategories] = useState([])
   const [scores, setScores] = useState([])
+  const [countryFilter, setCountryFilter] = useState('')
   const [editingCell, setEditingCell] = useState(null)
   const [editValue, setEditValue] = useState('')
 
@@ -25,6 +26,17 @@ export default function ScoreMatrix() {
   }
 
   useEffect(() => { load() }, [])
+
+  const uniqueCountries = useMemo(
+    () => Array.from(new Set(locations.map((loc) => loc.country).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+    [locations],
+  )
+
+  const filteredLocations = useMemo(() => {
+    if (!countryFilter) return locations
+    const normalizedFilter = countryFilter.trim().toLowerCase()
+    return locations.filter((loc) => loc.country?.trim().toLowerCase() === normalizedFilter)
+  }, [locations, countryFilter])
 
   const getScore = (locId, catId) => {
     const s = scores.find((s) => s.location_id === locId && s.category_id === catId)
@@ -49,6 +61,29 @@ export default function ScoreMatrix() {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-4">Score Matrix</h1>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <label htmlFor="country-filter" className="text-sm text-gray-600">Country</label>
+        <select
+          id="country-filter"
+          value={countryFilter}
+          onChange={(e) => setCountryFilter(e.target.value)}
+          className="border rounded px-3 py-2 text-sm bg-white"
+        >
+          <option value="">All countries</option>
+          {uniqueCountries.map((country) => (
+            <option key={country} value={country}>{country}</option>
+          ))}
+        </select>
+        {countryFilter && (
+          <button
+            onClick={() => setCountryFilter('')}
+            className="px-2 py-1 rounded text-xs border bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+          >
+            Clear
+          </button>
+        )}
+        <span className="text-xs text-gray-500">{filteredLocations.length} of {locations.length} shown</span>
+      </div>
       <div className="bg-white rounded-lg shadow overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -62,7 +97,7 @@ export default function ScoreMatrix() {
             </tr>
           </thead>
           <tbody>
-            {locations.map((loc) => (
+            {filteredLocations.map((loc) => (
               <tr key={loc.id} className="border-b hover:bg-gray-50">
                 <td className="py-2 px-3 font-medium sticky left-0 bg-white">{loc.name}</td>
                 {categories.map((cat) => {
@@ -92,10 +127,10 @@ export default function ScoreMatrix() {
                 })}
               </tr>
             ))}
-            {locations.length === 0 && (
+            {filteredLocations.length === 0 && (
               <tr>
                 <td colSpan={categories.length + 1} className="py-8 text-center text-gray-400">
-                  No locations yet.
+                  {locations.length === 0 ? 'No locations yet.' : 'No locations match the selected country filter.'}
                 </td>
               </tr>
             )}

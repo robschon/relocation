@@ -29,6 +29,7 @@ class LocationUpdate(BaseModel):
     population: Optional[int] = None
     description: Optional[str] = None
     notes: Optional[str] = None
+    full_research_ran_at: Optional[datetime] = None
 
 
 class LocationOut(BaseModel):
@@ -41,6 +42,7 @@ class LocationOut(BaseModel):
     population: Optional[int]
     description: Optional[str]
     notes: Optional[str]
+    full_research_ran_at: Optional[datetime]
     created_at: datetime
     updated_at: datetime
 

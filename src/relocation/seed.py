@@ -75,6 +75,11 @@ SEED_CATEGORIES = [
         "sort_order": 14,
         "description": "Derived from monthly ocean temperature: higher scores indicate more months comfortable for swimming.",
     },
+    {
+        "name": "Beach accessibility",
+        "sort_order": 15,
+        "description": "Derived from nearest public beach distance and local beach density around each location.",
+    },
 ]
 
 SEED_LOCATIONS = [

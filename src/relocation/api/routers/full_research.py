@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -76,10 +77,36 @@ def _discover_env_var_from_zsh(var_name: str) -> str | None:
     return value or None
 
 
-def _run_full_research_job(job_id: str, location_name: str) -> None:
+def _build_full_research_cmd(location_id: int, *, force_research: bool = False) -> list[str]:
+    cmd = [sys.executable, str(FULL_RESEARCH_SCRIPT), "--location-id", str(location_id)]
+    if force_research:
+        cmd.append("--force-research")
+    return cmd
+
+
+def _derive_job_error(output: list[str], return_code: int) -> str:
+    patterns = (
+        re.compile(r"^\s*\[error\]\s*(.+)$", re.IGNORECASE),
+        re.compile(r"^\s*error:\s*(.+)$", re.IGNORECASE),
+        re.compile(r"^\s*traceback", re.IGNORECASE),
+    )
+    for line in reversed(output):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        for pattern in patterns:
+            match = pattern.search(stripped)
+            if match:
+                if match.lastindex:
+                    return match.group(1).strip()
+                return stripped
+    return f"Pipeline exited with code {return_code}"
+
+
+def _run_full_research_job(job_id: str, location_id: int, force_research: bool) -> None:
     _update_job(job_id, status="running", step="starting")
 
-    cmd = [sys.executable, str(FULL_RESEARCH_SCRIPT), location_name]
+    cmd = _build_full_research_cmd(location_id, force_research=force_research)
     env = os.environ.copy()
     if not env.get("OPENAI_API_KEY"):
         discovered = _discover_env_var_from_zsh("OPENAI_API_KEY")
@@ -131,17 +158,23 @@ def _run_full_research_job(job_id: str, location_name: str) -> None:
             step="completed",
         )
     else:
+        with _jobs_lock:
+            output = list(_jobs[job_id].output)
         _update_job(
             job_id,
             status="failed",
-            error=f"Pipeline exited with code {return_code}",
+            error=_derive_job_error(output, return_code),
             finished_at=datetime.now(timezone.utc),
             step="failed",
         )
 
 
 @router.post("/locations/{location_id}/full-research", response_model=FullResearchJobOut, status_code=202)
-def start_full_research(location_id: int, db: Session = Depends(get_db)):
+def start_full_research(
+    location_id: int,
+    force_research: bool = False,
+    db: Session = Depends(get_db),
+):
     location = db.get(Location, location_id)
     if not location:
         raise HTTPException(status_code=404, detail="Location not found")
@@ -170,11 +203,21 @@ def start_full_research(location_id: int, db: Session = Depends(get_db)):
 
     thread = threading.Thread(
         target=_run_full_research_job,
-        args=(job_id, location.name),
+        args=(job_id, location.id, force_research),
         daemon=True,
     )
     thread.start()
     return job
+
+
+@router.get("/full-research-jobs", response_model=list[FullResearchJobOut])
+def list_full_research_jobs():
+    with _jobs_lock:
+        return sorted(
+            _jobs.values(),
+            key=lambda job: job.started_at,
+            reverse=True,
+        )
 
 
 @router.get("/full-research-jobs/{job_id}", response_model=FullResearchJobOut)

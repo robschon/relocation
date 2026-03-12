@@ -2,12 +2,13 @@
 
 Pipeline:
 1. Research all categories + visa + bespoke description
-2. Generate and upsert all 13 category scores
+2. Generate and upsert category scores
 3. Replace pros/cons with 8 pros + 8 cons
 4. Export research markdown doc
 
 Usage:
     uv run python scripts/full_research_location_openai.py "Khao Lak"
+    uv run python scripts/full_research_location_openai.py --location-id 42
     uv run python scripts/full_research_location_openai.py "Khao Lak" --force-research
 """
 
@@ -16,6 +17,7 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from openai import OpenAI
@@ -190,13 +192,20 @@ def export_research_markdown(location_name: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run full OpenAI research routine for one location")
-    parser.add_argument("location", help="Location name to process")
+    parser.add_argument("location", nargs="?", help="Location name to process")
+    parser.add_argument("--location-id", type=int, help="Exact location ID to process")
     parser.add_argument("--force-research", action="store_true", help="Re-run category research even if already present")
     parser.add_argument("--skip-visa", action="store_true", help="Skip visa generation")
     parser.add_argument("--force-description", action="store_true", help="Overwrite existing location description")
     args = parser.parse_args()
 
-    location = resolve_location(args.location)
+    if args.location_id is not None:
+        location = get_location(args.location_id)
+    elif args.location:
+        location = resolve_location(args.location)
+    else:
+        parser.error("Provide either LOCATION or --location-id.")
+
     location_name = location["name"]
     print(f"[start] Full routine: {location_name} ({location['country']})")
 
@@ -385,12 +394,21 @@ def main() -> int:
             profile_context=profile_context,
         )
         api_put(f"/locations/{location['id']}", {"description": description})
-        print(f"  [done] Description set (scores: {score_coverage}/13, research: {research_coverage}/13)")
+        print(
+            f"  [done] Description set (scores: {score_coverage}/{len(categories)}, "
+            f"research: {research_coverage}/{len(categories)})"
+        )
 
     # 6) Export markdown doc
     print("[step] Export markdown")
     export_research_markdown(location_name)
     print("  [done] Research markdown exported")
+
+    api_put(
+        f"/locations/{location['id']}",
+        {"full_research_ran_at": datetime.now(timezone.utc).isoformat()},
+    )
+    print("  [done] Full research timestamp updated")
 
     print(f"[done] Full routine complete for {location_name}")
     return 0

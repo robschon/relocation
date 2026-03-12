@@ -18,7 +18,7 @@ def test_pipeline_skips_when_disabled(monkeypatch):
     assert calls == []
 
 
-def test_pipeline_runs_ocean_then_swimming(monkeypatch):
+def test_pipeline_runs_ocean_then_swimming_then_beach_access(monkeypatch):
     calls: list[list[str]] = []
 
     def fake_run(*args, **kwargs):  # noqa: ANN002, ANN003
@@ -30,9 +30,11 @@ def test_pipeline_runs_ocean_then_swimming(monkeypatch):
 
     new_location_enrichment.run_location_post_create_pipeline(456)
 
-    assert len(calls) == 2
+    assert len(calls) == 3
     assert "update_ocean_temperatures.py" in calls[0][1]
     assert calls[0][2:6] == ["--location-id", "456", "--request-interval-seconds", "0"]
     assert calls[0][-1] == "--only-missing"
     assert "update_swimming_scores.py" in calls[1][1]
     assert calls[1][-2:] == ["--location-id", "456"]
+    assert "update_beach_accessibility_scores.py" in calls[2][1]
+    assert calls[2][-2:] == ["--location-id", "456"]

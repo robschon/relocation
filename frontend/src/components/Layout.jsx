@@ -6,6 +6,7 @@ const links = [
   { to: '/scores', label: 'Score Matrix' },
   { to: '/weights', label: 'Weights' },
   { to: '/research', label: 'Research' },
+  { to: '/research-jobs', label: 'Research Jobs' },
   { to: '/pros-cons', label: 'Pros & Cons' },
   { to: '/visa', label: 'Visa Info' },
   { to: '/ocean-temperatures', label: 'Ocean Temps' },

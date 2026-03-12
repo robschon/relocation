@@ -21,10 +21,11 @@ import httpx
 from openai import OpenAI, RateLimitError
 
 API_BASE = "http://localhost:8000/api/v1"
-MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+MODEL = os.getenv("OPENAI_MODEL", "gpt-5.4")
 MAX_RETRIES = 2
 RETRY_DELAY = 2
 STRICT_FRESHNESS_CATEGORY_NAMES = {"Visa / residency feasibility", "Tax implications"}
+BEACH_ACCESSIBILITY_CATEGORY_NAMES = {"beachaccessibility", "beachaccesibility"}
 
 
 def api_get(path: str, params: dict | None = None) -> list | dict:
@@ -160,6 +161,11 @@ def category_requires_freshness(category: dict) -> bool:
     return (category.get("name") or "").strip() in STRICT_FRESHNESS_CATEGORY_NAMES
 
 
+def category_is_beach_accessibility(category: dict) -> bool:
+    normalized = re.sub(r"[^a-z]", "", (category.get("name") or "").lower())
+    return normalized in BEACH_ACCESSIBILITY_CATEGORY_NAMES
+
+
 def _normalize_iso_date(value: object) -> str | None:
     if value is None:
         return None
@@ -252,6 +258,13 @@ def research_category(
 - Include at least one official source URL and one corroborating secondary URL.
 - If evidence conflicts, state uncertainty in source text and lower confidence."""
 
+    beach_instruction = ""
+    if category_is_beach_accessibility(category):
+        beach_instruction = """This category must prioritize accessibility of swimmable saltwater (ocean/sea), not sunbathing amenities.
+- Focus on practical, frequent ability to get in the water: public access points, typical swim safety/conditions, water quality advisories, and transit/parking friction.
+- Prefer evidence about swimmable saltwater beaches and coastline access; if only freshwater options are nearby, state that clearly.
+- Do not overweight resort loungers, beach clubs, or tanning-friendly sand quality unless they materially affect getting in the water."""
+
     profile_instruction = ""
     if profile_context:
         profile_instruction = f"""Relocation profile context (use this as the primary persona for relevance and tradeoff analysis):
@@ -269,6 +282,7 @@ Treat visa/residency barriers as effectively none and focus on practical admin/t
 {profile_instruction}
 {citizenship_instruction}
 {strict_instruction}
+{beach_instruction}
 
 Provide detailed, factual research notes that would help someone evaluating this location for retirement/relocation. Include specific data points, numbers, and comparisons where possible.
 

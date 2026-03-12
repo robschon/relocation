@@ -21,7 +21,12 @@ export const getLocation = (id) => request(`${BASE}/locations/${id}`)
 export const createLocation = (data) => request(`${BASE}/locations`, { method: 'POST', body: JSON.stringify(data) })
 export const updateLocation = (id, data) => request(`${BASE}/locations/${id}`, { method: 'PUT', body: JSON.stringify(data) })
 export const deleteLocation = (id) => request(`${BASE}/locations/${id}`, { method: 'DELETE' })
-export const startLocationFullResearch = (id) => request(`${BASE}/locations/${id}/full-research`, { method: 'POST' })
+export const startLocationFullResearch = (id, { forceResearch = false } = {}) => {
+  const qs = new URLSearchParams()
+  if (forceResearch) qs.set('force_research', 'true')
+  return request(`${BASE}/locations/${id}/full-research${qs.size ? `?${qs.toString()}` : ''}`, { method: 'POST' })
+}
+export const getFullResearchJobs = () => request(`${BASE}/full-research-jobs`)
 export const getFullResearchJob = (jobId) => request(`${BASE}/full-research-jobs/${jobId}`)
 
 // Categories

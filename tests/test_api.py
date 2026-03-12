@@ -15,9 +15,22 @@ def test_create_location(client):
     })
     assert resp.status_code == 201
     assert resp.json()["name"] == "Lisbon"
+    assert resp.json()["full_research_ran_at"] is None
 
     resp = client.get("/api/v1/locations")
     assert len(resp.json()) == 5
+
+
+def test_update_location_full_research_timestamp(client):
+    loc_id = client.get("/api/v1/locations").json()[0]["id"]
+
+    resp = client.put(
+        f"/api/v1/locations/{loc_id}",
+        json={"full_research_ran_at": "2026-03-12T10:30:00Z"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["full_research_ran_at"].startswith("2026-03-12T10:30:00")
 
 
 def test_create_location_triggers_enrichment_when_enabled(client, monkeypatch):
@@ -44,7 +57,7 @@ def test_create_location_triggers_enrichment_when_enabled(client, monkeypatch):
 def test_list_categories(client):
     resp = client.get("/api/v1/categories")
     assert resp.status_code == 200
-    assert len(resp.json()) == 14
+    assert len(resp.json()) == 15
 
 
 def test_upsert_score(client):
@@ -137,3 +150,113 @@ def test_pros_cons(client):
     resp = client.get(f"/api/v1/locations/{loc_id}/pros-cons")
     assert len(resp.json()) == 1
     assert resp.json()[0]["type"] == "pro"
+
+
+def test_start_full_research_uses_location_id(client, monkeypatch):
+    from pathlib import Path
+
+    from relocation.api.routers import full_research
+
+    full_research._jobs.clear()
+    loc_id = client.get("/api/v1/locations").json()[0]["id"]
+    calls: dict[str, object] = {}
+
+    class DummyThread:
+        def __init__(self, *, target, args, daemon):
+            calls["target"] = target
+            calls["args"] = args
+            calls["daemon"] = daemon
+
+        def start(self):
+            calls["started"] = True
+
+    monkeypatch.setattr(full_research, "FULL_RESEARCH_SCRIPT", Path(__file__))
+    monkeypatch.setattr(full_research.threading, "Thread", DummyThread)
+
+    resp = client.post(f"/api/v1/locations/{loc_id}/full-research")
+
+    assert resp.status_code == 202
+    assert resp.json()["location_id"] == loc_id
+    assert calls["args"][1] == loc_id
+    assert calls["args"][2] is False
+    assert calls["started"] is True
+
+
+def test_start_full_research_can_force_refresh(client, monkeypatch):
+    from pathlib import Path
+
+    from relocation.api.routers import full_research
+
+    full_research._jobs.clear()
+    loc_id = client.get("/api/v1/locations").json()[0]["id"]
+    calls: dict[str, object] = {}
+
+    class DummyThread:
+        def __init__(self, *, target, args, daemon):
+            calls["args"] = args
+
+        def start(self):
+            calls["started"] = True
+
+    monkeypatch.setattr(full_research, "FULL_RESEARCH_SCRIPT", Path(__file__))
+    monkeypatch.setattr(full_research.threading, "Thread", DummyThread)
+
+    resp = client.post(f"/api/v1/locations/{loc_id}/full-research?force_research=true")
+
+    assert resp.status_code == 202
+    assert calls["args"][1] == loc_id
+    assert calls["args"][2] is True
+    assert calls["started"] is True
+
+
+def test_list_full_research_jobs_returns_newest_first(client):
+    from datetime import datetime, timezone
+
+    from relocation.api.routers import full_research
+
+    full_research._jobs.clear()
+    older = full_research.FullResearchJobOut(
+        id="older",
+        location_id=1,
+        location_name="Older",
+        status="completed",
+        started_at=datetime(2026, 3, 11, 12, 0, tzinfo=timezone.utc),
+        output=[],
+    )
+    newer = full_research.FullResearchJobOut(
+        id="newer",
+        location_id=2,
+        location_name="Newer",
+        status="running",
+        started_at=datetime(2026, 3, 12, 12, 0, tzinfo=timezone.utc),
+        output=[],
+    )
+    full_research._jobs[older.id] = older
+    full_research._jobs[newer.id] = newer
+
+    resp = client.get("/api/v1/full-research-jobs")
+
+    assert resp.status_code == 200
+    assert [job["id"] for job in resp.json()] == ["newer", "older"]
+
+
+def test_build_full_research_cmd_includes_force_flag():
+    from relocation.api.routers.full_research import _build_full_research_cmd
+
+    cmd = _build_full_research_cmd(42, force_research=True)
+
+    assert "--location-id" in cmd
+    assert "42" in cmd
+    assert cmd[-1] == "--force-research"
+
+
+def test_full_research_error_derivation_uses_last_error_line():
+    from relocation.api.routers.full_research import _derive_job_error
+
+    output = [
+        "[step] Research categories",
+        "  [error] Tax implications: missing dated citations",
+        "[failures]",
+    ]
+
+    assert _derive_job_error(output, 1) == "Tax implications: missing dated citations"

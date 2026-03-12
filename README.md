@@ -2,6 +2,10 @@
 
 CLI and API tooling for evaluating relocation candidates.
 
+## Documentation
+
+- CLI reference: [`docs/cli-reference.md`](docs/cli-reference.md)
+
 ## AI Research Script Quick Start
 
 Prereqs:

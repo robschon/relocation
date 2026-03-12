@@ -6,6 +6,7 @@ import LocationDetail from './pages/LocationDetail'
 import ScoreMatrix from './pages/ScoreMatrix'
 import Weights from './pages/Weights'
 import Research from './pages/Research'
+import ResearchJobs from './pages/ResearchJobs'
 import ProsCons from './pages/ProsCons'
 import Visa from './pages/Visa'
 import Profile from './pages/Profile'
@@ -21,6 +22,7 @@ export default function App() {
         <Route path="/scores" element={<ScoreMatrix />} />
         <Route path="/weights" element={<Weights />} />
         <Route path="/research" element={<Research />} />
+        <Route path="/research-jobs" element={<ResearchJobs />} />
         <Route path="/pros-cons" element={<ProsCons />} />
         <Route path="/visa" element={<Visa />} />
         <Route path="/ocean-temperatures" element={<OceanTemperatures />} />

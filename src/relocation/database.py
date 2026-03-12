@@ -88,6 +88,7 @@ def _run_sqlite_compat_migrations() -> None:
         # locations
         ensure_column(connection, "locations", "latitude", "FLOAT")
         ensure_column(connection, "locations", "longitude", "FLOAT")
+        ensure_column(connection, "locations", "full_research_ran_at", "DATETIME")
 
         # research
         ensure_column(connection, "research", "source_urls", "TEXT")

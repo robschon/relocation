@@ -11,6 +11,7 @@ LOGGER = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 OCEAN_SCRIPT = PROJECT_ROOT / "scripts" / "update_ocean_temperatures.py"
 SWIMMING_SCRIPT = PROJECT_ROOT / "scripts" / "update_swimming_scores.py"
+BEACH_ACCESSIBILITY_SCRIPT = PROJECT_ROOT / "scripts" / "update_beach_accessibility_scores.py"
 AUTO_ENRICH_ENV_VAR = "RELOCATION_AUTO_ENRICH_NEW_LOCATIONS"
 _DISABLED_VALUES = {"0", "false", "no", "off"}
 
@@ -45,7 +46,7 @@ def _run_pipeline_command(command: list[str], *, step_name: str) -> bool:
 
 
 def run_location_post_create_pipeline(location_id: int) -> None:
-    """Populate ocean temperatures and swimming score for a newly created location."""
+    """Populate deterministic ocean/swimming/beach scores for a newly created location."""
     if not _auto_enrich_enabled():
         LOGGER.info("Skipping post-create enrichment; %s disabled", AUTO_ENRICH_ENV_VAR)
         return
@@ -54,11 +55,12 @@ def run_location_post_create_pipeline(location_id: int) -> None:
         LOGGER.error("Skipping post-create enrichment; invalid location_id=%s", location_id)
         return
 
-    if not OCEAN_SCRIPT.exists() or not SWIMMING_SCRIPT.exists():
+    if not OCEAN_SCRIPT.exists() or not SWIMMING_SCRIPT.exists() or not BEACH_ACCESSIBILITY_SCRIPT.exists():
         LOGGER.error(
-            "Skipping post-create enrichment; script missing (ocean=%s swimming=%s)",
+            "Skipping post-create enrichment; script missing (ocean=%s swimming=%s beach=%s)",
             OCEAN_SCRIPT.exists(),
             SWIMMING_SCRIPT.exists(),
+            BEACH_ACCESSIBILITY_SCRIPT.exists(),
         )
         return
 
@@ -85,4 +87,14 @@ def run_location_post_create_pipeline(location_id: int) -> None:
             str(location_id),
         ],
         step_name="swimming_score",
+    )
+
+    _run_pipeline_command(
+        [
+            sys.executable,
+            str(BEACH_ACCESSIBILITY_SCRIPT),
+            "--location-id",
+            str(location_id),
+        ],
+        step_name="beach_accessibility_score",
     )

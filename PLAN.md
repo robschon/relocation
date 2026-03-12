@@ -1,306 +1,137 @@
-# Relocation Planning Tool — Implementation Plan
+# Relocation Planning Tool — Current State Plan
 
-## Overview
+Updated: 2026-03-11
 
-A web app + CLI + Google Sheets sync for tracking and comparing potential international retirement destinations. Two fixed users (husband and wife) who each weight scoring categories independently. SQLite database, Python backend, local hosting.
+## 1) Project Snapshot (Current)
 
-## Architecture
+### Core stack
+- Backend: FastAPI + SQLAlchemy + SQLite
+- CLI: Typer (`relocation`)
+- Frontend: React + Vite + Tailwind + Recharts
+- Research automation: OpenAI/Anthropic-powered scripts + deterministic scoring scripts
 
-- **Database**: SQLite
-- **Backend**: Python / FastAPI
-- **CLI**: Typer
-- **Frontend**: TBD in Phase 2 (React or similar)
-- **Google Sheets**: Phase 3
+### What is running today
+- Full CRUD-style workflows for locations, scores, weights, research, pros/cons, and visa info (API + CLI, with some intentional read-only endpoints like categories/users).
+- Ranking engine for `husband`, `wife`, and `combined`.
+- Profile questionnaire + markdown export.
+- Ocean temperature ingestion and query APIs.
+- Derived category scoring for:
+  - Year-round swimming viability
+  - Beach accessibility
+- Full-research job launcher endpoint with progress polling.
+- React dashboard and management pages across major entities.
 
-## Project Structure
+### Local database snapshot (from `data/relocation.db` on 2026-03-11)
+- Locations: 108
+- Categories: 15
+- Scores: 1,620
+- Weights: 30
+- Research entries: 1,646
+- Pros/cons: 1,702
+- Visa entries: 155
+- Ocean temperature monthly rows: 1,284 (107 locations represented)
 
-```
-$HOME/Code/relocation/
-├── pyproject.toml
-├── uv.lock
-├── .gitignore
-├── .env
-├── alembic.ini
-├── alembic/
-│   ├── env.py
-│   └── versions/
-├── src/
-│   └── relocation/
-│       ├── __init__.py
-│       ├── config.py              # Settings (DB path, etc.)
-│       ├── database.py            # Engine, session factory, Base
-│       ├── models.py              # SQLAlchemy ORM models
-│       ├── schemas.py             # Pydantic schemas for API
-│       ├── seed.py                # Seed data
-│       ├── api/
-│       │   ├── __init__.py
-│       │   ├── app.py             # FastAPI app factory
-│       │   └── routers/
-│       │       ├── __init__.py
-│       │       ├── locations.py
-│       │       ├── categories.py
-│       │       ├── scores.py
-│       │       ├── weights.py
-│       │       ├── research.py
-│       │       ├── pros_cons.py
-│       │       ├── visa.py
-│       │       ├── profile.py
-│       │       └── rankings.py
-│       ├── cli/
-│       │   ├── __init__.py
-│       │   ├── main.py            # Typer app entry point
-│       │   ├── locations.py
-│       │   ├── categories.py
-│       │   ├── scores.py
-│       │   ├── weights.py
-│       │   ├── research.py
-│       │   ├── pros_cons.py
-│       │   ├── visa.py
-│       │   ├── profile.py
-│       │   └── rank.py
-│       ├── profile_builder/
-│       │   ├── __init__.py
-│       │   ├── questions.py       # Question definitions
-│       │   ├── builder.py         # Interactive questionnaire
-│       │   └── formatter.py       # Markdown export
-│       └── services/
-│           ├── __init__.py
-│           └── ranking.py         # Weighted score calculation
-├── data/
-│   └── relocation.db              # SQLite (created at runtime)
-└── tests/
-    ├── __init__.py
-    ├── conftest.py
-    ├── test_models.py
-    ├── test_api.py
-    ├── test_cli.py
-    └── test_ranking.py
-```
+### Verification status
+- Backend/unit/API tests: `63 passed` (`uv run pytest -q`)
+- Frontend production build: passes (`npm run build`)
+- Lint status:
+  - Python lint (`ruff`): failing (3 unused imports)
+  - Frontend lint (`eslint`): failing (React hooks/state-in-effect and one unused variable)
 
-## Database Schema
+## 2) Completed Work
 
-### Tables
+### Phase A — Foundation (Done)
+- Data model established for users, locations, categories, scores, weights, research, pros/cons, visa, profile responses, ocean temperatures.
+- DB init/seed workflow in place (`relocation init`).
+- Seed categories expanded from original 13 to 15 (adds swimming viability + beach accessibility).
 
-#### `users`
-| Column     | Type         | Constraints           |
-|------------|-------------|-----------------------|
-| id         | INTEGER      | PK, autoincrement     |
-| name       | VARCHAR(50)  | NOT NULL, UNIQUE      |
-| created_at | DATETIME     | NOT NULL, default=now |
+### Phase B — Core Product Surface (Done)
+- CLI commands implemented for all primary workflows:
+  - `location`, `category`, `score`, `weight`, `research`, `pros-cons`, `visa`, `profile`, `rank`
+- API routers implemented for:
+  - locations, categories, scores, weights, research, pros/cons, visa, profile, rankings, users, ocean temperatures, full-research jobs
+- Ranking service supports per-user and combined scoring outputs with category-level detail.
 
-Seeded with: `husband`, `wife`
+### Phase C — Research/Data Enrichment (Mostly Done)
+- Research and visa schemas now include source provenance and confidence fields.
+- Freshness/evidence validation added for strict categories (notably visa/tax pathways).
+- New-location background enrichment pipeline runs:
+  - Ocean temperatures update
+  - Swimming score update
+  - Beach accessibility score update
+- Script suite exists for research generation, rescoring, normalization, and exports.
 
-#### `locations`
-| Column      | Type          | Constraints                          |
-|-------------|--------------|--------------------------------------|
-| id          | INTEGER       | PK, autoincrement                    |
-| name        | VARCHAR(200)  | NOT NULL                             |
-| country     | VARCHAR(100)  | NOT NULL                             |
-| region      | VARCHAR(100)  | nullable                             |
-| population  | INTEGER       | nullable                             |
-| description | TEXT          | nullable                             |
-| notes       | TEXT          | nullable                             |
-| created_at  | DATETIME      | NOT NULL, default=now                |
-| updated_at  | DATETIME      | NOT NULL, default=now, onupdate=now  |
+### Phase D — Frontend Application (Implemented, Needs Hardening)
+- React app routes/pages are in place for dashboard, locations, location detail, score matrix, weights, research, pros/cons, visa, profile, ocean temperatures.
+- Full-research jobs can be started from the UI and polled for progress.
+- Data visualizations available (rank charts/radar comparison).
 
-UNIQUE on `(name, country)`
+## 3) Current Gaps / Risks
 
-#### `categories`
-| Column      | Type          | Constraints           |
-|-------------|-------------|-----------------------|
-| id          | INTEGER       | PK, autoincrement     |
-| name        | VARCHAR(200)  | NOT NULL, UNIQUE      |
-| description | TEXT          | nullable              |
-| sort_order  | INTEGER       | NOT NULL, default=0   |
-| created_at  | DATETIME      | NOT NULL, default=now |
+### Engineering hygiene
+- Lint gates are currently red:
+  - Backend: 3 Ruff violations.
+  - Frontend: React hooks/state-in-effect lint errors + warnings.
+- No frontend automated test suite yet (backend test coverage is strong).
 
-Seeded with 13 categories (see below)
+### Reliability/operational
+- Full-research jobs are in-memory only; job state does not survive backend restart.
+- DB migration approach is currently SQLite compatibility logic in `init_db()` rather than versioned migrations (no Alembic flow in active use).
 
-#### `scores`
-| Column      | Type    | Constraints                              |
-|-------------|---------|------------------------------------------|
-| id          | INTEGER | PK, autoincrement                        |
-| location_id | INTEGER | FK -> locations.id, NOT NULL             |
-| category_id | INTEGER | FK -> categories.id, NOT NULL            |
-| score       | INTEGER | NOT NULL, CHECK(1 <= score <= 10)        |
-| notes       | TEXT    | nullable                                 |
-| created_at  | DATETIME | NOT NULL, default=now                   |
-| updated_at  | DATETIME | NOT NULL, default=now, onupdate=now     |
+### Documentation drift
+- Some docs mention `uv run relocation serve`, but current CLI has no `serve` command.
+- `PLAN.md` was previously a greenfield blueprint and did not reflect current implementation details until this update.
 
-UNIQUE on `(location_id, category_id)`. One score per location per category (objective). User preferences expressed via weights.
+## 4) Active Priorities (Next)
 
-#### `weights`
-| Column      | Type    | Constraints                              |
-|-------------|---------|------------------------------------------|
-| id          | INTEGER | PK, autoincrement                        |
-| user_id     | INTEGER | FK -> users.id, NOT NULL                 |
-| category_id | INTEGER | FK -> categories.id, NOT NULL            |
-| weight      | FLOAT   | NOT NULL, CHECK(weight >= 0)             |
-| created_at  | DATETIME | NOT NULL, default=now                   |
-| updated_at  | DATETIME | NOT NULL, default=now, onupdate=now     |
+### Priority 1 — Stabilize quality gates
+- Fix Python Ruff violations and make `ruff check` pass.
+- Fix frontend ESLint violations and warnings.
+- Add lint checks to routine validation commands.
 
-UNIQUE on `(user_id, category_id)`. Scale 1-10 (0 = "don't care").
+### Priority 2 — Align docs with reality
+- Update README and `docs/adding-a-location.md` to use current run commands (e.g., `uv run uvicorn relocation.api.app:app --host 127.0.0.1 --port 8000`).
+- Document current 15-category model and deterministic enrichment behavior.
 
-#### `research`
-| Column      | Type          | Constraints                    |
-|-------------|--------------|--------------------------------|
-| id          | INTEGER       | PK, autoincrement              |
-| location_id | INTEGER       | FK -> locations.id, NOT NULL   |
-| category_id | INTEGER       | FK -> categories.id, nullable  |
-| content     | TEXT          | NOT NULL                       |
-| source      | VARCHAR(500)  | nullable                       |
-| source_date | DATE          | nullable                       |
-| created_at  | DATETIME      | NOT NULL, default=now          |
+### Priority 3 — Improve job durability
+- Persist full-research job metadata/status in DB (or durable store) instead of process memory.
+- Add restart-safe polling behavior for the frontend.
 
-Multiple entries per location/category expected.
+### Priority 4 — Frontend performance and confidence
+- Address bundle-size warning (~698 kB built JS chunk) via code splitting.
+- Add at least smoke-level UI tests for critical flows (locations, research, rankings).
 
-#### `pros_cons`
-| Column      | Type        | Constraints                              |
-|-------------|-------------|------------------------------------------|
-| id          | INTEGER     | PK, autoincrement                        |
-| location_id | INTEGER     | FK -> locations.id, NOT NULL             |
-| category_id | INTEGER     | FK -> categories.id, nullable            |
-| type        | VARCHAR(4)  | NOT NULL, CHECK(type IN ('pro', 'con'))  |
-| content     | TEXT        | NOT NULL                                 |
-| created_at  | DATETIME    | NOT NULL, default=now                    |
+## 5) Medium-Term Roadmap
 
-#### `visa_info`
-| Column            | Type          | Constraints                          |
-|-------------------|--------------|--------------------------------------|
-| id                | INTEGER       | PK, autoincrement                    |
-| country           | VARCHAR(100)  | NOT NULL                             |
-| visa_type         | VARCHAR(200)  | NOT NULL                             |
-| description       | TEXT          | nullable                             |
-| residency_pathway | TEXT          | nullable                             |
-| requirements      | TEXT          | nullable                             |
-| timeline          | VARCHAR(200)  | nullable                             |
-| cost              | VARCHAR(200)  | nullable                             |
-| notes             | TEXT          | nullable                             |
-| created_at        | DATETIME      | NOT NULL, default=now                |
-| updated_at        | DATETIME      | NOT NULL, default=now, onupdate=now  |
+### Data quality and governance
+- Expand strict freshness/verification policies beyond visa/tax where appropriate.
+- Add stale-data reporting and recheck workflows.
 
-Keyed by `country` string (not FK to locations — visa rules are country-level).
+### Product workflow improvements
+- Streamline “add location” flow into one orchestrated backend pipeline.
+- Improve error/reporting UX for long-running research tasks.
 
-#### `profile_responses`
-| Column       | Type          | Constraints                          |
-|--------------|--------------|--------------------------------------|
-| id           | INTEGER       | PK, autoincrement                    |
-| section      | VARCHAR(100)  | NOT NULL                             |
-| question_key | VARCHAR(100)  | NOT NULL, UNIQUE                     |
-| question     | TEXT          | NOT NULL                             |
-| answer       | TEXT          | nullable                             |
-| created_at   | DATETIME      | NOT NULL, default=now                |
-| updated_at   | DATETIME      | NOT NULL, default=now, onupdate=now  |
+### Nice-to-have / deferred
+- Google Sheets sync remains unimplemented (still optional/deferred).
 
-Key-value store for profile questionnaire responses.
-
-## Seed Data
-
-### 13 Scoring Categories
-1. Cost of living / housing
-2. Climate / weather
-3. Healthcare quality & access
-4. Visa / residency feasibility
-5. Tax implications (income, property, estate)
-6. Safety / stability
-7. Language / cultural accessibility
-8. Walkability / public transit
-9. Cultural amenities / lifestyle
-10. Travel connectivity & proximity to family/friends
-11. Food scene
-12. Natural beauty / outdoor recreation
-13. Expat community / English prevalence
-
-### 4 Seed Locations
-- **Osa Peninsula**, Costa Rica — Remote, biodiverse Pacific coast region
-- **Fremantle**, Western Australia (~30k pop) — Historic port city near Perth with strong arts scene
-- **Baja Peninsula**, Mexico — Desert peninsula, popular with US expats
-- **Lima**, Peru (~10M pop) — Capital city, world-renowned food scene
-
-### Default Weights
-All categories seeded at weight=5 (neutral) for both users.
-
-## API Endpoints
-
-Base: `http://localhost:8000/api/v1`
-
-- **Locations**: GET/POST/PUT/DELETE `/locations`, GET `/locations/{id}`
-- **Categories**: GET/POST/PUT `/categories`, GET `/categories/{id}`
-- **Scores**: GET/POST/PUT `/scores`, GET `/locations/{id}/scores` (POST uses upsert)
-- **Weights**: GET/POST/PUT `/weights`, GET `/users/{name}/weights` (POST uses upsert)
-- **Research**: GET/POST/PUT/DELETE `/research`
-- **Pros/Cons**: GET/POST/DELETE `/pros-cons`, GET `/locations/{id}/pros-cons`
-- **Visa**: GET/POST/PUT/DELETE `/visa`
-- **Profile**: GET/POST `/profile`, GET `/profile/export` (markdown)
-- **Rankings**: GET `/rankings?user=husband|wife|combined`
-- **Users**: GET `/users`
-
-## CLI Commands
-
-```
-relocation init                           # Initialize DB + seed data
-relocation location list|add|show|remove
-relocation category list
-relocation score set|list|matrix
-relocation weight set|list|matrix
-relocation research add|list|show|remove
-relocation pro add / con add
-relocation pros-cons list
-relocation visa add|list|show
-relocation profile build|show|export
-relocation rank [--user husband|wife] [--detailed]
-```
-
-CLI uses fuzzy substring matching for location and category names.
-
-## Ranking Algorithm
-
-For each location:
-1. Get all scores (location_id, category_id, score)
-2. Get weights for specified user (or average both users' weights for "combined")
-3. `weighted_score = sum(score_i * weight_i) / sum(weight_i)`
-4. Sort descending
-
-Missing scores are skipped. Missing weights default to 5.
-
-## Profile Builder
-
-Interactive questionnaire covering:
-- **Demographics**: ages, health, pets
-- **Financial**: monthly budget, housing budget, income sources, tax situation
-- **Languages & Culture**: languages spoken, cultural preferences, international experience
-- **Lifestyle**: interests/hobbies, daily routine, food preferences, exercise
-- **Requirements**: must-haves, deal-breakers, climate preference, healthcare needs
-- **Connections**: family locations, friend locations, visit frequency, remote work needs
-- **Other**: timeline, trial period openness, additional notes
-
-Exports as a formatted markdown document for use as Claude research context.
-
-## Implementation Order
-
-1. **Project scaffolding**: uv init, dependencies, directory structure, config, .gitignore, git init
-2. **Database models**: database.py + models.py (all 8 ORM models)
-3. **Seed data + init command**: seed.py + `relocation init`
-4. **Core CLI**: location, category, score, weight, research, pros/cons, visa commands
-5. **Ranking service + rank CLI**: ranking algorithm, `relocation rank`
-6. **Profile builder**: questions, interactive builder, markdown export
-7. **FastAPI backend**: Pydantic schemas, app factory, all routers
-8. **Tests**: fixtures, model tests, API tests, ranking tests
-
-## Verification
-
-After implementation, this sequence should work:
+## 6) Current Runbook
 
 ```bash
+# Backend
+uv run uvicorn relocation.api.app:app --host 127.0.0.1 --port 8000
+
+# CLI init
 uv run relocation init
-uv run relocation location list
-uv run relocation category list
-uv run relocation weight set husband "cost of living" 8
-uv run relocation score set osa "cost of living" 7 --notes "Very affordable"
-uv run relocation rank --detailed
-uv run relocation profile build
-uv run relocation profile export
-uv run uvicorn relocation.api.app:app --reload
-curl http://localhost:8000/api/v1/locations
-uv run pytest -v
+
+# Tests
+uv run pytest -q
+
+# Python lint
+uv run ruff check
+
+# Frontend
+cd frontend
+npm run dev
+npm run build
+npm run lint
 ```
