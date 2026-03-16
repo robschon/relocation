@@ -267,7 +267,7 @@ export default function Locations() {
       </div>
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow p-4 mb-6 grid grid-cols-2 gap-4">
+        <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow p-4 mb-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
           <input
             required placeholder="Name" value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -291,10 +291,10 @@ export default function Locations() {
           <textarea
             placeholder="Description" value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
-            className="border rounded px-3 py-2 text-sm col-span-2"
+            className="border rounded px-3 py-2 text-sm sm:col-span-2"
             rows={2}
           />
-          <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 col-span-2">
+          <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 sm:col-span-2">
             Create Location
           </button>
         </form>

@@ -72,7 +72,7 @@ export default function Dashboard() {
     <div>
       <h1 className="text-2xl font-bold mb-4">Dashboard</h1>
 
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <div className="bg-white rounded-lg shadow p-4">
           <div className="text-3xl font-bold text-blue-600">{locations.length}</div>
           <div className="text-sm text-gray-500">Total Locations</div>

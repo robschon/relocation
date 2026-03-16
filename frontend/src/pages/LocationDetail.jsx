@@ -129,13 +129,13 @@ export default function LocationDetail() {
       <div className="bg-white rounded-lg shadow p-6 mb-6">
         <div className="flex items-start justify-between">
           {editing ? (
-            <div className="grid grid-cols-2 gap-3 flex-1 mr-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 flex-1 mr-4">
               <input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} className="border rounded px-3 py-1 text-sm" placeholder="Name" />
               <input value={editForm.country} onChange={(e) => setEditForm({ ...editForm, country: e.target.value })} className="border rounded px-3 py-1 text-sm" placeholder="Country" />
               <input value={editForm.region} onChange={(e) => setEditForm({ ...editForm, region: e.target.value })} className="border rounded px-3 py-1 text-sm" placeholder="Region" />
               <input value={editForm.population} onChange={(e) => setEditForm({ ...editForm, population: e.target.value })} className="border rounded px-3 py-1 text-sm" placeholder="Population" type="number" />
-              <textarea value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} className="border rounded px-3 py-1 text-sm col-span-2" placeholder="Description" rows={2} />
-              <div className="col-span-2 flex gap-2">
+              <textarea value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} className="border rounded px-3 py-1 text-sm sm:col-span-2" placeholder="Description" rows={2} />
+              <div className="sm:col-span-2 flex gap-2">
                 <button onClick={handleSave} className="bg-green-600 text-white px-3 py-1 rounded text-sm">Save</button>
                 <button onClick={() => setEditing(false)} className="bg-gray-300 px-3 py-1 rounded text-sm">Cancel</button>
               </div>
@@ -177,7 +177,7 @@ export default function LocationDetail() {
 
         <div className="bg-white rounded-lg shadow p-4">
           <h2 className="text-lg font-semibold mb-4">Pros & Cons</h2>
-          <div className="grid grid-cols-2 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
             <div>
               <h3 className="text-sm font-medium text-green-700 mb-2">Pros ({pros.length})</h3>
               {pros.map((p) => (

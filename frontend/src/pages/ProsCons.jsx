@@ -54,7 +54,7 @@ export default function ProsCons() {
             <h2 className="text-lg font-semibold mb-3">
               {loc.name} <span className="text-sm text-gray-400 font-normal">{loc.country}</span>
             </h2>
-            <div className="grid grid-cols-2 gap-4 mb-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
               <div>
                 <h3 className="text-sm font-medium text-green-700 mb-2">Pros ({pros.length})</h3>
                 {pros.map((p) => (
