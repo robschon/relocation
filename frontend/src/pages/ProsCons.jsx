@@ -1,18 +1,21 @@
 import { useState, useEffect } from 'react'
 import { getLocations, getProsCons, createProCon, deleteProCon, getCategories, getRankings } from '../api'
 import { sortLocationsByOverallRank } from '../utils/rankings'
+import Spinner from '../components/Spinner'
 
 export default function ProsCons() {
   const [locations, setLocations] = useState([])
   const [prosCons, setProsCons] = useState([])
   const [categories, setCategories] = useState([])
   const [newItems, setNewItems] = useState({})
+  const [loading, setLoading] = useState(true)
 
   const load = async () => {
     const [locs, pc, cats, rankings] = await Promise.all([getLocations(), getProsCons(), getCategories(), getRankings('combined')])
     setLocations(sortLocationsByOverallRank(locs, rankings))
     setProsCons(pc)
     setCategories(cats)
+    setLoading(false)
   }
 
   useEffect(() => { load() }, [])
@@ -39,6 +42,8 @@ export default function ProsCons() {
   }
 
   const catName = (id) => categories.find((c) => c.id === id)?.name || ''
+
+  if (loading) return <Spinner label="Loading pros & cons..." />
 
   return (
     <div>

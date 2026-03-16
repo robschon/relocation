@@ -9,6 +9,7 @@ import {
   getFullResearchJob,
 } from '../api'
 import { sortLocationsByOverallRank } from '../utils/rankings'
+import Spinner from '../components/Spinner'
 
 function matchingRanking(location, rankings) {
   return rankings.find(
@@ -132,6 +133,7 @@ export default function Locations() {
   const [showForm, setShowForm] = useState(false)
   const [countryFilter, setCountryFilter] = useState('')
   const [form, setForm] = useState({ name: '', country: '', region: '', population: '', description: '' })
+  const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
   const countryCodeByName = useMemo(() => buildCountryCodeByName(), [])
 
@@ -156,6 +158,7 @@ export default function Locations() {
         }
       }),
     )
+    setLoading(false)
   }
   useEffect(() => { load() }, [])
 
@@ -229,6 +232,8 @@ export default function Locations() {
     const normalizedFilter = normalizeCountryName(countryFilter)
     return locations.filter((loc) => normalizeCountryName(loc.country) === normalizedFilter)
   }, [locations, countryFilter])
+
+  if (loading) return <Spinner label="Loading locations..." />
 
   return (
     <div className="relative">

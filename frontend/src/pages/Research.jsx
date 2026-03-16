@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { getResearch, createResearch, deleteResearch, getLocations, getCategories } from '../api'
+import Spinner from '../components/Spinner'
 
 const strictCategoryNames = new Set(['Visa / residency feasibility', 'Tax implications'])
 const todayIso = new Date().toISOString().slice(0, 10)
@@ -380,9 +381,7 @@ export default function Research() {
       )}
 
       <div className="space-y-3">
-        {isLoading && research.length === 0 && (
-          <div className="text-center text-gray-400 py-12">Loading research...</div>
-        )}
+        {isLoading && research.length === 0 && <Spinner label="Loading research..." />}
         {research.map((entry) => {
           const isLong = entry.content.length > 200
           const isExpanded = expanded[entry.id]

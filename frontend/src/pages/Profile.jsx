@@ -1,13 +1,18 @@
 import { useState, useEffect } from 'react'
 import { getProfile, upsertProfile, exportProfile } from '../api'
+import Spinner from '../components/Spinner'
 
 export default function Profile() {
   const [responses, setResponses] = useState([])
   const [editingId, setEditingId] = useState(null)
   const [editValue, setEditValue] = useState('')
   const [saving, setSaving] = useState(false)
+  const [loading, setLoading] = useState(true)
 
-  const load = () => getProfile().then(setResponses)
+  const load = () => getProfile().then((data) => {
+    setResponses(data)
+    setLoading(false)
+  })
 
   useEffect(() => { load() }, [])
 
@@ -53,6 +58,8 @@ export default function Profile() {
     if (e.key === 'Escape') cancelEdit()
     if (e.key === 'Enter' && e.metaKey) saveEdit(item)
   }
+
+  if (loading) return <Spinner label="Loading profile..." />
 
   return (
     <div>

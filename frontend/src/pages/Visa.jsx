@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { getVisas, createVisa, updateVisa, deleteVisa } from '../api'
+import Spinner from '../components/Spinner'
 
 const todayIso = new Date().toISOString().slice(0, 10)
 
@@ -39,6 +40,7 @@ export default function Visa() {
   const [form, setForm] = useState({ ...emptyForm })
   const [expanded, setExpanded] = useState({})
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
 
   const load = () => {
     const params = search ? { country: search } : {}
@@ -50,8 +52,14 @@ export default function Visa() {
   useEffect(() => {
     const params = search ? { country: search } : {}
     getVisas(params)
-      .then(setVisas)
-      .catch((err) => setError(err.message))
+      .then((data) => {
+        setVisas(data)
+        setLoading(false)
+      })
+      .catch((err) => {
+        setError(err.message)
+        setLoading(false)
+      })
   }, [search])
 
   const handleSubmit = async (e) => {
@@ -145,6 +153,8 @@ export default function Visa() {
     ;(acc[visa.country] = acc[visa.country] || []).push(visa)
     return acc
   }, {})
+
+  if (loading) return <Spinner label="Loading visa info..." />
 
   return (
     <div>

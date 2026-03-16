@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { getRankings, getLocations, getCategories } from '../api'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts'
+import Spinner from '../components/Spinner'
 
 export default function Dashboard() {
   const [rankings, setRankings] = useState([])
@@ -10,6 +11,7 @@ export default function Dashboard() {
   const [categories, setCategories] = useState([])
   const [chartType, setChartType] = useState('bar')
   const [selectedLocations, setSelectedLocations] = useState(new Set())
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     getRankings(view).then((data) => {
@@ -23,8 +25,11 @@ export default function Dashboard() {
   }, [view])
 
   useEffect(() => {
-    getLocations().then(setLocations)
-    getCategories().then(setCategories)
+    Promise.all([getLocations(), getCategories()]).then(([locs, cats]) => {
+      setLocations(locs)
+      setCategories(cats)
+      setLoading(false)
+    })
   }, [])
 
   const toggleLocation = (name) => {
@@ -67,6 +72,8 @@ export default function Dashboard() {
   )
   const locationIdForRanking = (ranking) =>
     locationIdByKey[`${ranking.location_name.trim().toLowerCase()}::${ranking.country.trim().toLowerCase()}`]
+
+  if (loading) return <Spinner label="Loading dashboard..." />
 
   return (
     <div>

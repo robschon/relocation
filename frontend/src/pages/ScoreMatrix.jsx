@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { getLocations, getCategories, getScores, upsertScore, getRankings } from '../api'
 import { sortLocationsByOverallRank } from '../utils/rankings'
+import Spinner from '../components/Spinner'
 
 function scoreColor(score) {
   if (score === null || score === undefined) return 'bg-gray-100 text-gray-400'
@@ -17,12 +18,14 @@ export default function ScoreMatrix() {
   const [countryFilter, setCountryFilter] = useState('')
   const [editingCell, setEditingCell] = useState(null)
   const [editValue, setEditValue] = useState('')
+  const [loading, setLoading] = useState(true)
 
   const load = async () => {
     const [locs, cats, sc, rankings] = await Promise.all([getLocations(), getCategories(), getScores(), getRankings('combined')])
     setLocations(sortLocationsByOverallRank(locs, rankings))
     setCategories(cats)
     setScores(sc)
+    setLoading(false)
   }
 
   useEffect(() => { load() }, [])
@@ -57,6 +60,8 @@ export default function ScoreMatrix() {
     }
     setEditingCell(null)
   }
+
+  if (loading) return <Spinner label="Loading score matrix..." />
 
   return (
     <div>

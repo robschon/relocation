@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getLocation, updateLocation, getLocationScores, upsertScore, getLocationProsCons, createProCon, deleteProCon, getCategories, getResearch, exportLocationResearchMarkdown } from '../api'
 import ScoreSlider from '../components/ScoreSlider'
+import Spinner from '../components/Spinner'
 
 export default function LocationDetail() {
   const { id } = useParams()
@@ -98,7 +99,7 @@ export default function LocationDetail() {
     setShowResearchMarkdown(true)
   }
 
-  if (!location) return <div className="text-gray-400">Loading...</div>
+  if (!location) return <Spinner label="Loading location..." />
 
   const scoreMap = Object.fromEntries(scores.map((s) => [s.category_id, s.score]))
   const categoryNameById = Object.fromEntries(categories.map((cat) => [cat.id, cat.name]))

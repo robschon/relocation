@@ -1,17 +1,20 @@
 import { useState, useEffect } from 'react'
 import { getCategories, getUsers, getWeights, upsertWeight } from '../api'
 import WeightSlider from '../components/WeightSlider'
+import Spinner from '../components/Spinner'
 
 export default function Weights() {
   const [categories, setCategories] = useState([])
   const [users, setUsers] = useState([])
   const [weights, setWeights] = useState([])
+  const [loading, setLoading] = useState(true)
 
   const load = async () => {
     const [cats, us, ws] = await Promise.all([getCategories(), getUsers(), getWeights()])
     setCategories(cats)
     setUsers(us)
     setWeights(ws)
+    setLoading(false)
   }
 
   useEffect(() => { load() }, [])
@@ -25,6 +28,8 @@ export default function Weights() {
     await upsertWeight({ user_id: userId, category_id: catId, weight: value })
     load()
   }
+
+  if (loading) return <Spinner label="Loading weights..." />
 
   return (
     <div>
