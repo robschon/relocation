@@ -10,7 +10,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import re
 import sys
@@ -18,7 +17,8 @@ import time
 from datetime import date, datetime
 
 import httpx
-from openai import OpenAI, RateLimitError
+from openai import APIResponseValidationError, LengthFinishReasonError, OpenAI, RateLimitError
+from pydantic import BaseModel, RootModel, ValidationError
 
 API_BASE = "http://localhost:8000/api/v1"
 MODEL = os.getenv("OPENAI_MODEL", "gpt-5.4")
@@ -26,6 +26,39 @@ MAX_RETRIES = 2
 RETRY_DELAY = 2
 STRICT_FRESHNESS_CATEGORY_NAMES = {"Visa / residency feasibility", "Tax implications"}
 BEACH_ACCESSIBILITY_CATEGORY_NAMES = {"beachaccessibility", "beachaccesibility"}
+
+
+class CategoryResearchResponse(BaseModel):
+    content: str
+    source: str | None = None
+    source_urls: list[str] | None = None
+    source_published_at: str | None = None
+    source_checked_at: str | None = None
+    verification_status: str | None = None
+    confidence: float | None = None
+
+
+class VisaResearchItem(BaseModel):
+    visa_type: str
+    description: str | None = None
+    residency_pathway: str | None = None
+    requirements: str | None = None
+    timeline: str | None = None
+    cost: str | None = None
+    notes: str | None = None
+    source_urls: list[str] | None = None
+    source_published_at: str | None = None
+    source_checked_at: str | None = None
+    verification_status: str | None = None
+    confidence: float | None = None
+
+
+class VisaResearchResponse(RootModel[list[VisaResearchItem]]):
+    pass
+
+
+class BespokeDescriptionResponse(BaseModel):
+    description: str
 
 
 def api_get(path: str, params: dict | None = None) -> list | dict:
@@ -123,13 +156,6 @@ def get_profile_answers() -> dict[str, str]:
     return answers
 
 
-def parse_json_response(text: str) -> dict | list:
-    """Parse JSON from model output, stripping markdown fences if present."""
-    cleaned = re.sub(r"^```(?:json)?\s*\n?", "", text.strip())
-    cleaned = re.sub(r"\n?```\s*$", "", cleaned)
-    return json.loads(cleaned)
-
-
 def _normalize_urls(value: object) -> list[str]:
     if value is None:
         return []
@@ -218,17 +244,26 @@ def infer_profile_flags(profile_answers: dict[str, str]) -> dict[str, bool]:
     }
 
 
-def generate_json(client: OpenAI, prompt: str, max_output_tokens: int = 2048) -> dict | list:
+def generate_structured_output(
+    client: OpenAI,
+    prompt: str,
+    *,
+    text_format: type[BaseModel] | type[RootModel],
+    max_output_tokens: int = 2048,
+):
     for attempt in range(MAX_RETRIES + 1):
         try:
-            response = client.responses.create(
+            response = client.responses.parse(
                 model=MODEL,
                 input=prompt,
+                text_format=text_format,
                 max_output_tokens=max_output_tokens,
             )
-            text = response.output_text
-            return parse_json_response(text)
-        except json.JSONDecodeError:
+            parsed = response.output_parsed
+            if parsed is None:
+                raise ValueError("Structured output was empty")
+            return parsed
+        except (ValidationError, APIResponseValidationError, LengthFinishReasonError, ValueError):
             if attempt < MAX_RETRIES:
                 time.sleep(RETRY_DELAY)
                 continue
@@ -286,20 +321,14 @@ Treat visa/residency barriers as effectively none and focus on practical admin/t
 
 Provide detailed, factual research notes that would help someone evaluating this location for retirement/relocation. Include specific data points, numbers, and comparisons where possible.
 
-Respond with JSON only (no markdown fences):
-{{
-  "content": "Your detailed research notes (multiple paragraphs, use \\n for line breaks)",
-  "source": "Brief description of evidence basis and when checked (e.g. 'Web research checked March 2026')",
-  "source_urls": ["https://example.gov/...", "https://example.com/..."],
-  "source_published_at": "YYYY-MM-DD or null if unknown (do not use ranges like '2023-2026')",
-  "source_checked_at": "YYYY-MM-DD",
-  "verification_status": "verified or needs_review",
-  "confidence": 0.0
-}}"""
+Return structured data matching the requested schema."""
 
-    result = generate_json(client, prompt, max_output_tokens=2048)
-    if not isinstance(result, dict):
-        raise ValueError(f"Expected object JSON for category result, got {type(result).__name__}")
+    result = generate_structured_output(
+        client,
+        prompt,
+        text_format=CategoryResearchResponse,
+        max_output_tokens=2048,
+    ).model_dump()
 
     source_urls = _normalize_urls(result.get("source_urls"))
     source_published_at = _normalize_iso_date(result.get("source_published_at"))
@@ -375,45 +404,31 @@ Provide the most relevant visa types (typically 2-5).
 Use live web sources from official government immigration pages when available.
 Do not rely on general knowledge.
 
-Respond with JSON only (no markdown fences):
-[
-  {{
-    "visa_type": "Name of the visa",
-    "description": "Brief description of the visa",
-    "residency_pathway": "Whether/how this leads to permanent residency",
-    "requirements": "Key requirements (age, income, investment, etc.)",
-    "timeline": "Typical processing time",
-    "cost": "Application fees and costs",
-    "notes": "Any additional relevant notes",
-    "source_urls": ["https://example.gov/...", "https://example.com/..."],
-    "source_published_at": "YYYY-MM-DD or null if unknown (do not use ranges like '2023-2026')",
-    "source_checked_at": "YYYY-MM-DD",
-    "verification_status": "verified or needs_review",
-    "confidence": 0.0
-  }}
-]"""
+Return structured data matching the requested schema."""
 
-    result = generate_json(client, prompt, max_output_tokens=4096)
-    if not isinstance(result, list):
-        raise ValueError(f"Expected array JSON for visa result, got {type(result).__name__}")
+    result = generate_structured_output(
+        client,
+        prompt,
+        text_format=VisaResearchResponse,
+        max_output_tokens=4096,
+    ).root
     today = date.today().isoformat()
     normalized: list[dict] = []
     for visa in result:
-        if not isinstance(visa, dict):
-            continue
-        urls = _normalize_urls(visa.get("source_urls"))
+        visa_data = visa.model_dump()
+        urls = _normalize_urls(visa_data.get("source_urls"))
         if not urls:
             continue
-        confidence = _parse_confidence(visa.get("confidence"))
+        confidence = _parse_confidence(visa_data.get("confidence"))
         if confidence is None:
             confidence = 0.65
         normalized.append(
             {
-                **visa,
+                **visa_data,
                 "source_urls": urls,
-                "source_published_at": _normalize_iso_date(visa.get("source_published_at")),
-                "source_checked_at": str(visa.get("source_checked_at") or today),
-                "verification_status": str(visa.get("verification_status") or "verified"),
+                "source_published_at": _normalize_iso_date(visa_data.get("source_published_at")),
+                "source_checked_at": str(visa_data.get("source_checked_at") or today),
+                "verification_status": str(visa_data.get("verification_status") or "verified"),
                 "confidence": confidence,
             }
         )
@@ -515,16 +530,16 @@ Style:
 Use this evidence context:
 {context}
 
-Respond with JSON only:
-{{
-  "description": "One-sentence bespoke description"
-}}
+Return structured data matching the requested schema.
 """
 
-    result = generate_json(client, prompt, max_output_tokens=320)
-    if not isinstance(result, dict) or "description" not in result:
-        raise ValueError("Expected JSON object with a 'description' field")
-    description = str(result["description"]).strip()
+    result = generate_structured_output(
+        client,
+        prompt,
+        text_format=BespokeDescriptionResponse,
+        max_output_tokens=320,
+    )
+    description = str(result.description).strip()
     if not description:
         raise ValueError("Generated description is empty")
     return description, score_coverage, research_coverage

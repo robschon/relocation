@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from openai import OpenAI
+from pydantic import BaseModel
 
 from research_location_openai import (
     api_delete,
@@ -31,7 +32,7 @@ from research_location_openai import (
     get_profile_answers,
     get_profile_context,
     generate_bespoke_description,
-    generate_json,
+    generate_structured_output,
     get_existing_research,
     get_existing_visa,
     get_location_research,
@@ -41,6 +42,30 @@ from research_location_openai import (
     research_visa,
     resolve_location,
 )
+
+
+class ScoreCategoryResponse(BaseModel):
+    score: int
+    notes: str | None = None
+
+
+class ProConItemResponse(BaseModel):
+    category_id: int
+    content: str
+
+
+class ProsConsResponse(BaseModel):
+    pros: list[ProConItemResponse]
+    cons: list[ProConItemResponse]
+
+
+def log_step(message: str) -> None:
+    print(f"[step] {message}", flush=True)
+
+
+def log_info(message: str) -> None:
+    print(message, flush=True)
+
 
 def get_location(location_id: int) -> dict:
     return api_get(f"/locations/{location_id}")
@@ -72,11 +97,7 @@ Category description: {category.get('description') or 'N/A'}
 Research evidence:
 {research_content}
 
-Return JSON only:
-{{
-  "score": <integer 1-10>,
-  "notes": "<one concise sentence explaining the score>"
-}}
+Return structured data matching the requested schema.
 
 Scoring guidance:
 - 10 world-class
@@ -85,12 +106,15 @@ Scoring guidance:
 - 4-5 notable weaknesses
 - 1-3 serious concerns
 """
-    result = generate_json(client, prompt, max_output_tokens=260)
-    if not isinstance(result, dict):
-        raise ValueError(f"Expected object JSON for score result, got {type(result).__name__}")
-    score = int(result["score"])
+    result = generate_structured_output(
+        client,
+        prompt,
+        text_format=ScoreCategoryResponse,
+        max_output_tokens=260,
+    )
+    score = int(result.score)
     score = max(1, min(10, score))
-    notes = str(result.get("notes", "")).strip()
+    notes = str(result.notes or "").strip()
     if not notes:
         notes = "Balanced assessment from current research evidence."
     return {"score": score, "notes": notes}
@@ -125,15 +149,7 @@ def generate_pros_cons(
 Use only the evidence below:
 {chr(10).join(context_rows)}
 
-Return JSON only:
-{{
-  "pros": [
-    {{"category_id": <int>, "content": "<single sentence>"}}
-  ],
-  "cons": [
-    {{"category_id": <int>, "content": "<single sentence>"}}
-  ]
-}}
+Return structured data matching the requested schema.
 
 Rules:
 - Exactly 8 pros and 8 cons.
@@ -142,32 +158,28 @@ Rules:
 - Pros should highlight strongest strengths.
 - Cons should be honest tradeoffs or risks.
 """
-    result = generate_json(client, prompt, max_output_tokens=2200)
-    if not isinstance(result, dict):
-        raise ValueError(f"Expected object JSON for pros/cons result, got {type(result).__name__}")
-
-    pros = result.get("pros")
-    cons = result.get("cons")
-    if not isinstance(pros, list) or not isinstance(cons, list):
-        raise ValueError("Pros/cons response missing list fields")
+    result = generate_structured_output(
+        client,
+        prompt,
+        text_format=ProsConsResponse,
+        max_output_tokens=2200,
+    )
 
     normalized_pros: list[dict] = []
     normalized_cons: list[dict] = []
 
-    def normalize(items: list, out: list[dict], type_name: str) -> None:
+    def normalize(items: list[ProConItemResponse], out: list[dict], type_name: str) -> None:
         for item in items:
-            if not isinstance(item, dict):
-                continue
-            cid = item.get("category_id")
-            content = str(item.get("content", "")).strip()
-            if not isinstance(cid, int) or cid not in categories_by_id:
+            cid = item.category_id
+            content = item.content.strip()
+            if cid not in categories_by_id:
                 continue
             if not content:
                 continue
             out.append({"category_id": cid, "content": content, "type": type_name})
 
-    normalize(pros, normalized_pros, "pro")
-    normalize(cons, normalized_cons, "con")
+    normalize(result.pros, normalized_pros, "pro")
+    normalize(result.cons, normalized_cons, "con")
 
     if len(normalized_pros) < 8 or len(normalized_cons) < 8:
         raise ValueError(
@@ -207,18 +219,18 @@ def main() -> int:
         parser.error("Provide either LOCATION or --location-id.")
 
     location_name = location["name"]
-    print(f"[start] Full routine: {location_name} ({location['country']})")
+    log_info(f"[start] Full routine: {location_name} ({location['country']})")
 
     client = OpenAI()
     profile_context = get_profile_context()
     profile_answers = get_profile_answers()
     profile_flags = infer_profile_flags(profile_answers)
     if profile_context:
-        print("[context] Profile context loaded and will be used in prompts")
+        log_info("[context] Profile context loaded and will be used in prompts")
     else:
-        print("[context] No profile context found; using location/category-only prompts")
+        log_info("[context] No profile context found; using location/category-only prompts")
     if profile_flags.get("is_us_citizen"):
-        print("[context] Profile indicates U.S. citizenship")
+        log_info("[context] Profile indicates U.S. citizenship")
 
     categories = api_get("/categories")
     if not isinstance(categories, list):
@@ -226,15 +238,16 @@ def main() -> int:
 
     # 1) Research categories
     existing = get_existing_research(location["id"]) if not args.force_research else set()
-    print("[step] Research categories")
+    log_step("Research categories")
     research_failures: list[str] = []
     for category in categories:
         should_refresh = category_requires_freshness(category)
         if category["id"] in existing and not should_refresh:
-            print(f"  [skip] {category['name']} (already researched)")
+            log_info(f"  [skip] {category['name']} (already researched)")
             continue
         if category["id"] in existing and should_refresh:
-            print(f"  [refresh] {category['name']} (freshness policy)")
+            log_info(f"  [refresh] {category['name']} (freshness policy)")
+        log_step(f"Research category: {category['name']}")
         try:
             result = research_category(
                 client=client,
@@ -257,23 +270,24 @@ def main() -> int:
                     "confidence": result.get("confidence"),
                 },
             )
-            print(f"  [done] {category['name']}")
+            log_info(f"  [done] {category['name']}")
         except Exception as exc:
-            print(f"  [error] {category['name']}: {exc}")
+            log_info(f"  [error] {category['name']}: {exc}")
             research_failures.append(category["name"])
 
     # 2) Visa
     if not args.skip_visa:
-        print("[step] Visa research")
+        log_step("Visa research")
         try:
             existing_visa = get_existing_visa(location["country"])
             if existing_visa:
-                print(
+                log_info(
                     f"  [refresh] Visa info for {location['country']} "
                     f"(replacing {len(existing_visa)} existing type(s))"
                 )
                 for old in existing_visa:
                     api_delete(f"/visa/{old['id']}")
+            log_step(f"Research visa: {location['country']}")
             visa_types = research_visa(
                 client=client,
                 location=location,
@@ -299,9 +313,9 @@ def main() -> int:
                         "confidence": visa.get("confidence"),
                     },
                 )
-            print(f"  [done] {len(visa_types)} visa type(s) for {location['country']}")
+            log_info(f"  [done] {len(visa_types)} visa type(s) for {location['country']}")
         except Exception as exc:
-            print(f"  [error] Visa research: {exc}")
+            log_info(f"  [error] Visa research: {exc}")
 
     # Fetch refreshed data
     research_entries = get_location_research(location["id"])
@@ -311,17 +325,18 @@ def main() -> int:
         raise ValueError("No research entries were created; cannot continue full routine")
 
     if research_failures:
-        print(f"[warn] Categories with research errors: {', '.join(research_failures)}")
+        log_info(f"[warn] Categories with research errors: {', '.join(research_failures)}")
 
     latest_research = latest_research_by_category(research_entries)
 
     # 3) Scores
-    print("[step] Generate scores")
+    log_step("Generate scores")
     for category in categories:
         research = latest_research.get(category["id"])
         if not research:
-            print(f"  [warn] {category['name']} has no research; skipping score")
+            log_info(f"  [warn] {category['name']} has no research; skipping score")
             continue
+        log_step(f"Score category: {category['name']}")
         score_result = score_category(
             client=client,
             location=location,
@@ -337,10 +352,10 @@ def main() -> int:
                 "notes": score_result["notes"],
             },
         )
-        print(f"  [done] {category['name']}: {score_result['score']}/10")
+        log_info(f"  [done] {category['name']}: {score_result['score']}/10")
 
     # 4) Pros/cons (replace existing)
-    print("[step] Generate pros/cons")
+    log_step("Generate pros/cons")
     existing_pros_cons = api_get("/pros-cons", {"location_id": location["id"]})
     if not isinstance(existing_pros_cons, list):
         raise ValueError("Pros/cons response was not a list")
@@ -376,15 +391,16 @@ def main() -> int:
                 "content": con["content"],
             },
         )
-    print(f"  [done] Pros/cons set (pros={len(pc['pros'])}, cons={len(pc['cons'])})")
+    log_info(f"  [done] Pros/cons set (pros={len(pc['pros'])}, cons={len(pc['cons'])})")
 
     # 5) Bespoke description
-    print("[step] Bespoke description")
+    log_step("Bespoke description")
     latest_location = get_location(location["id"])
     existing_description = (latest_location.get("description") or "").strip()
     if existing_description and not args.force_description:
-        print("  [skip] Description already set (use --force-description to overwrite)")
+        log_info("  [skip] Description already set (use --force-description to overwrite)")
     else:
+        log_step("Generate bespoke description")
         description, score_coverage, research_coverage = generate_bespoke_description(
             client=client,
             location=latest_location,
@@ -394,23 +410,23 @@ def main() -> int:
             profile_context=profile_context,
         )
         api_put(f"/locations/{location['id']}", {"description": description})
-        print(
+        log_info(
             f"  [done] Description set (scores: {score_coverage}/{len(categories)}, "
             f"research: {research_coverage}/{len(categories)})"
         )
 
     # 6) Export markdown doc
-    print("[step] Export markdown")
+    log_step("Export markdown")
     export_research_markdown(location_name)
-    print("  [done] Research markdown exported")
+    log_info("  [done] Research markdown exported")
 
     api_put(
         f"/locations/{location['id']}",
         {"full_research_ran_at": datetime.now(timezone.utc).isoformat()},
     )
-    print("  [done] Full research timestamp updated")
+    log_info("  [done] Full research timestamp updated")
 
-    print(f"[done] Full routine complete for {location_name}")
+    log_info(f"[done] Full routine complete for {location_name}")
     return 0
 
 
