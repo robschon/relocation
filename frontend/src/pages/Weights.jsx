@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { getCategories, getUsers, getWeights, upsertWeight } from '../api'
 import WeightSlider from '../components/WeightSlider'
 import Spinner from '../components/Spinner'
+import EmptyState from '../components/EmptyState'
+import { toast } from 'sonner'
 
 export default function Weights() {
   const [categories, setCategories] = useState([])
@@ -26,6 +28,7 @@ export default function Weights() {
 
   const handleChange = async (userId, catId, value) => {
     await upsertWeight({ user_id: userId, category_id: catId, weight: value })
+    toast.success('Weight saved')
     load()
   }
 
@@ -56,7 +59,9 @@ export default function Weights() {
             </div>
           ))}
           {users.length === 0 && (
-            <p className="text-gray-400 text-sm col-span-2">No users found.</p>
+            <div className="col-span-2">
+              <EmptyState icon="profile" title="No users found" message="Users are created automatically from seed data." />
+            </div>
           )}
         </div>
       </div>

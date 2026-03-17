@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { getLocation, updateLocation, getLocationScores, upsertScore, getLocationProsCons, createProCon, deleteProCon, getCategories, getResearch, exportLocationResearchMarkdown } from '../api'
 import ScoreSlider from '../components/ScoreSlider'
 import Spinner from '../components/Spinner'
+import { toast } from 'sonner'
 
 export default function LocationDetail() {
   const { id } = useParams()
@@ -50,12 +51,14 @@ export default function LocationDetail() {
       region: editForm.region || null,
       description: editForm.description || null,
     })
+    toast.success('Location updated')
     setEditing(false)
     load()
   }
 
   const handleScoreChange = async (categoryId, score) => {
     await upsertScore({ location_id: Number(id), category_id: categoryId, score })
+    toast.success('Score saved')
     load()
   }
 
@@ -67,12 +70,14 @@ export default function LocationDetail() {
       content: newProCon.content,
       category_id: newProCon.category_id ? Number(newProCon.category_id) : null,
     })
+    toast.success(`${newProCon.type === 'pro' ? 'Pro' : 'Con'} added`)
     setNewProCon({ type: 'pro', content: '', category_id: '' })
     load()
   }
 
   const handleDeleteProCon = async (itemId) => {
     await deleteProCon(itemId)
+    toast.success('Item removed')
     load()
   }
 

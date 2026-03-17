@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getFullResearchJobs } from '../api'
 import Spinner from '../components/Spinner'
+import EmptyState from '../components/EmptyState'
 
 function statusClasses(status) {
   if (status === 'running') return 'bg-blue-100 text-blue-800'
@@ -133,7 +134,7 @@ export default function ResearchJobs() {
           {loading ? (
             <Spinner label="Loading research jobs..." />
           ) : jobs.length === 0 ? (
-            <div className="p-6 text-sm text-gray-500">No full research jobs have been started in this backend session.</div>
+            <EmptyState icon="research" title="No research jobs yet" message="Start a full research job from the Locations page to see it tracked here." />
           ) : (
             <div className="overflow-auto">
               <table className="w-full text-sm">

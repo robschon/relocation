@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { getRankings, getLocations, getCategories } from '../api'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts'
 import Spinner from '../components/Spinner'
+import EmptyState from '../components/EmptyState'
 
 export default function Dashboard() {
   const [rankings, setRankings] = useState([])
@@ -141,8 +142,13 @@ export default function Dashboard() {
             ))}
             {rankings.length === 0 && (
               <tr>
-                <td colSpan={6} className="py-8 text-center text-gray-400">
-                  No rankings yet. Add locations and scores to get started.
+                <td colSpan={6}>
+                  <EmptyState
+                    icon="chart"
+                    title="No rankings yet"
+                    message="Add locations and scores to see rankings here."
+                    action={<Link to="/locations" className="text-sm text-blue-600 hover:underline">Go to Locations</Link>}
+                  />
                 </td>
               </tr>
             )}

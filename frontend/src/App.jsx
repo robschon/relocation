@@ -1,4 +1,5 @@
 import { Routes, Route } from 'react-router-dom'
+import { Toaster } from 'sonner'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import Locations from './pages/Locations'
@@ -14,20 +15,23 @@ import OceanTemperatures from './pages/OceanTemperatures'
 
 export default function App() {
   return (
-    <Routes>
-      <Route element={<Layout />}>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/locations" element={<Locations />} />
-        <Route path="/locations/:id" element={<LocationDetail />} />
-        <Route path="/scores" element={<ScoreMatrix />} />
-        <Route path="/weights" element={<Weights />} />
-        <Route path="/research" element={<Research />} />
-        <Route path="/research-jobs" element={<ResearchJobs />} />
-        <Route path="/pros-cons" element={<ProsCons />} />
-        <Route path="/visa" element={<Visa />} />
-        <Route path="/ocean-temperatures" element={<OceanTemperatures />} />
-        <Route path="/profile" element={<Profile />} />
-      </Route>
-    </Routes>
+    <>
+      <Toaster position="bottom-right" richColors closeButton />
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/locations" element={<Locations />} />
+          <Route path="/locations/:id" element={<LocationDetail />} />
+          <Route path="/scores" element={<ScoreMatrix />} />
+          <Route path="/weights" element={<Weights />} />
+          <Route path="/research" element={<Research />} />
+          <Route path="/research-jobs" element={<ResearchJobs />} />
+          <Route path="/pros-cons" element={<ProsCons />} />
+          <Route path="/visa" element={<Visa />} />
+          <Route path="/ocean-temperatures" element={<OceanTemperatures />} />
+          <Route path="/profile" element={<Profile />} />
+        </Route>
+      </Routes>
+    </>
   )
 }

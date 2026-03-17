@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { getVisas, createVisa, updateVisa, deleteVisa } from '../api'
 import Spinner from '../components/Spinner'
+import EmptyState from '../components/EmptyState'
+import { toast } from 'sonner'
 
 const todayIso = new Date().toISOString().slice(0, 10)
 
@@ -105,8 +107,10 @@ export default function Visa() {
     try {
       if (editingId) {
         await updateVisa(editingId, data)
+        toast.success('Visa info updated')
       } else {
         await createVisa(data)
+        toast.success('Visa info created')
       }
       setForm({ ...emptyForm, source_checked_at: todayIso })
       setShowForm(false)
@@ -143,6 +147,7 @@ export default function Visa() {
     setError('')
     try {
       await deleteVisa(id)
+      toast.success('Visa entry deleted')
       load()
     } catch (err) {
       setError(err.message)
@@ -336,7 +341,11 @@ export default function Visa() {
       ))}
 
       {visas.length === 0 && (
-        <div className="text-center text-gray-400 py-12">No visa information yet.</div>
+        <EmptyState
+          icon="visa"
+          title={search ? 'No matches' : 'No visa information yet'}
+          message={search ? 'No visa entries match your search.' : 'Add visa details for the countries you are considering.'}
+        />
       )}
     </div>
   )

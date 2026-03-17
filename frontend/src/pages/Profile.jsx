@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { getProfile, upsertProfile, exportProfile } from '../api'
 import Spinner from '../components/Spinner'
+import EmptyState from '../components/EmptyState'
+import { toast } from 'sonner'
 
 export default function Profile() {
   const [responses, setResponses] = useState([])
@@ -46,6 +48,7 @@ export default function Profile() {
     setSaving(true)
     try {
       await upsertProfile({ question_key: item.question_key, answer: editValue })
+      toast.success('Answer saved')
       setEditingId(null)
       setEditValue('')
       await load()
@@ -127,9 +130,11 @@ export default function Profile() {
       ))}
 
       {responses.length === 0 && (
-        <div className="text-center text-gray-400 py-12">
-          No profile responses yet. Use the CLI to fill out your profile.
-        </div>
+        <EmptyState
+          icon="profile"
+          title="No profile responses yet"
+          message="Use the CLI to fill out your profile, then answers will appear here for editing."
+        />
       )}
     </div>
   )

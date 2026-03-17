@@ -10,6 +10,8 @@ import {
 } from '../api'
 import { sortLocationsByOverallRank } from '../utils/rankings'
 import Spinner from '../components/Spinner'
+import EmptyState from '../components/EmptyState'
+import { toast } from 'sonner'
 
 function matchingRanking(location, rankings) {
   return rankings.find(
@@ -170,6 +172,7 @@ export default function Locations() {
       region: form.region || null,
       description: form.description || null,
     })
+    toast.success(`${form.name} added`)
     setForm({ name: '', country: '', region: '', population: '', description: '' })
     setShowForm(false)
     load()
@@ -178,6 +181,7 @@ export default function Locations() {
   const handleDelete = async (id, name) => {
     if (!confirm(`Delete "${name}"? This will also delete all scores, research, and pros/cons for this location.`)) return
     await deleteLocation(id)
+    toast.success(`${name} deleted`)
     load()
   }
 
@@ -191,8 +195,13 @@ export default function Locations() {
 
     const finalJob = await getFullResearchJob(jobId)
     setResearchJobs((prev) => ({ ...prev, [locationId]: finalJob }))
+    const loc = locations.find((l) => l.id === locationId)
+    const locLabel = loc?.name || `Location #${locationId}`
     if (finalJob.status === 'completed') {
+      toast.success(`Research completed for ${locLabel}`)
       load()
+    } else if (finalJob.status === 'failed') {
+      toast.error(`Research failed for ${locLabel}`)
     }
   }
 
@@ -203,10 +212,12 @@ export default function Locations() {
 
     try {
       const job = await startLocationFullResearch(loc.id, { forceResearch: true })
+      toast.success(`Research started for ${loc.name}`)
       setResearchJobs((prev) => ({ ...prev, [loc.id]: job }))
       setActiveLogLocationId(loc.id)
       void pollFullResearchJob(loc.id, job.id)
     } catch (error) {
+      toast.error(`Failed to start research for ${loc.name}`)
       setResearchJobs((prev) => ({
         ...prev,
         [loc.id]: {
@@ -401,13 +412,31 @@ export default function Locations() {
           )
         })}
         {locations.length === 0 && (
-          <div className="col-span-3 text-center text-gray-400 py-12">
-            No locations yet. Click "Add Location" to get started.
+          <div className="col-span-3">
+            <EmptyState
+              icon="locations"
+              title="No locations yet"
+              message="Add your first location candidate to start comparing."
+              action={
+                <button onClick={() => setShowForm(true)} className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">
+                  Add Location
+                </button>
+              }
+            />
           </div>
         )}
         {locations.length > 0 && filteredLocations.length === 0 && (
-          <div className="col-span-3 text-center text-gray-400 py-12">
-            No locations match the selected country filter.
+          <div className="col-span-3">
+            <EmptyState
+              icon="filter"
+              title="No matches"
+              message="No locations match the selected country filter."
+              action={
+                <button onClick={() => setCountryFilter('')} className="text-sm text-blue-600 hover:underline">
+                  Clear filter
+                </button>
+              }
+            />
           </div>
         )}
       </div>

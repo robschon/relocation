@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo } from 'react'
 import { getLocations, getCategories, getScores, upsertScore, getRankings } from '../api'
 import { sortLocationsByOverallRank } from '../utils/rankings'
 import Spinner from '../components/Spinner'
+import EmptyState from '../components/EmptyState'
+import { toast } from 'sonner'
 
 function scoreColor(score) {
   if (score === null || score === undefined) return 'bg-gray-100 text-gray-400'
@@ -56,6 +58,7 @@ export default function ScoreMatrix() {
     const val = Number(editValue)
     if (val >= 0 && val <= 10) {
       await upsertScore({ location_id: locId, category_id: catId, score: val })
+      toast.success('Score saved')
       await load()
     }
     setEditingCell(null)
@@ -134,8 +137,12 @@ export default function ScoreMatrix() {
             ))}
             {filteredLocations.length === 0 && (
               <tr>
-                <td colSpan={categories.length + 1} className="py-8 text-center text-gray-400">
-                  {locations.length === 0 ? 'No locations yet.' : 'No locations match the selected country filter.'}
+                <td colSpan={categories.length + 1}>
+                  <EmptyState
+                    icon={locations.length === 0 ? 'locations' : 'filter'}
+                    title={locations.length === 0 ? 'No locations yet' : 'No matches'}
+                    message={locations.length === 0 ? 'Add locations to start scoring them.' : 'No locations match the selected country filter.'}
+                  />
                 </td>
               </tr>
             )}

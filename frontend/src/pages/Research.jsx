@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { getResearch, createResearch, deleteResearch, getLocations, getCategories } from '../api'
 import Spinner from '../components/Spinner'
+import EmptyState from '../components/EmptyState'
+import { toast } from 'sonner'
 
 const strictCategoryNames = new Set(['Visa / residency feasibility', 'Tax implications'])
 const todayIso = new Date().toISOString().slice(0, 10)
@@ -226,6 +228,7 @@ export default function Research() {
         verification_status: form.verification_status,
         confidence,
       })
+      toast.success('Research entry saved')
       setForm({ ...emptyForm, source_checked_at: todayIso })
       setShowForm(false)
       load()
@@ -239,6 +242,7 @@ export default function Research() {
     setError('')
     try {
       await deleteResearch(id)
+      toast.success('Research entry deleted')
       load()
     } catch (err) {
       setError(err.message)
@@ -432,9 +436,11 @@ export default function Research() {
           )
         })}
         {!isLoading && research.length === 0 && (
-          <div className="text-center text-gray-400 py-12">
-            {filterLocation || filterCategory ? 'No research matches current filters.' : 'No research entries yet.'}
-          </div>
+          <EmptyState
+            icon={filterLocation || filterCategory ? 'filter' : 'research'}
+            title={filterLocation || filterCategory ? 'No matches' : 'No research yet'}
+            message={filterLocation || filterCategory ? 'No research matches the current filters.' : 'Add research entries or run full research on a location.'}
+          />
         )}
       </div>
     </div>

@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { getLocations, getProsCons, createProCon, deleteProCon, getCategories, getRankings } from '../api'
 import { sortLocationsByOverallRank } from '../utils/rankings'
 import Spinner from '../components/Spinner'
+import EmptyState from '../components/EmptyState'
+import { toast } from 'sonner'
 
 export default function ProsCons() {
   const [locations, setLocations] = useState([])
@@ -32,12 +34,14 @@ export default function ProsCons() {
       content: form.content,
       category_id: form.category_id ? Number(form.category_id) : null,
     })
+    toast.success(`${form.type === 'pro' ? 'Pro' : 'Con'} added`)
     setFormState(locId, { type: 'pro', content: '', category_id: '' })
     load()
   }
 
   const handleDelete = async (id) => {
     await deleteProCon(id)
+    toast.success('Item removed')
     load()
   }
 
@@ -108,7 +112,7 @@ export default function ProsCons() {
       })}
 
       {locations.length === 0 && (
-        <div className="text-center text-gray-400 py-12">No locations yet. Add locations first.</div>
+        <EmptyState icon="locations" title="No locations yet" message="Add locations first, then come back to list pros and cons." />
       )}
     </div>
   )
