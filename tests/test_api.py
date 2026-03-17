@@ -12,6 +12,8 @@ def test_create_location(client):
         "name": "Lisbon",
         "country": "Portugal",
         "region": "Europe",
+        "latitude": 38.7223,
+        "longitude": -9.1393,
     })
     assert resp.status_code == 201
     assert resp.json()["name"] == "Lisbon"
@@ -19,6 +21,25 @@ def test_create_location(client):
 
     resp = client.get("/api/v1/locations")
     assert len(resp.json()) == 5
+
+
+def test_create_location_returns_409_for_duplicate(client):
+    resp = client.post("/api/v1/locations", json={
+        "name": "Lisbon",
+        "country": "Portugal",
+        "latitude": 38.7223,
+        "longitude": -9.1393,
+    })
+    assert resp.status_code == 201
+
+    dup = client.post("/api/v1/locations", json={
+        "name": "Lisbon",
+        "country": "Portugal",
+        "latitude": 38.7223,
+        "longitude": -9.1393,
+    })
+    assert dup.status_code == 409
+    assert "already exists" in dup.json()["detail"]
 
 
 def test_update_location_full_research_timestamp(client):
@@ -48,10 +69,69 @@ def test_create_location_triggers_enrichment_when_enabled(client, monkeypatch):
         "name": "Setubal",
         "country": "Portugal",
         "region": "Europe",
+        "latitude": 38.5244,
+        "longitude": -8.8882,
     })
 
     assert resp.status_code == 201
     assert calls == [resp.json()["id"]]
+
+
+def test_create_location_without_coordinates_skips_enrichment(client, monkeypatch):
+    from relocation.api.routers import locations as locations_router
+
+    calls: list[int] = []
+
+    def fake_pipeline(location_id: int) -> None:
+        calls.append(location_id)
+
+    monkeypatch.setenv("RELOCATION_AUTO_ENRICH_NEW_LOCATIONS", "1")
+    monkeypatch.setattr(locations_router, "run_location_post_create_pipeline", fake_pipeline)
+
+    resp = client.post("/api/v1/locations", json={
+        "name": "Setubal",
+        "country": "Portugal",
+        "region": "Europe",
+    })
+
+    assert resp.status_code == 201
+    assert calls == []
+
+
+def test_location_candidates_endpoint(client, monkeypatch):
+    from relocation.api.routers import locations as locations_router
+
+    monkeypatch.setattr(
+        locations_router,
+        "search_location_candidates",
+        lambda **kwargs: {
+            "candidates": [
+                {
+                    "name": "San Andrés",
+                    "display_name": "San Andrés, Santa Cruz de Tenerife, Canary Islands, Spain",
+                    "country": "Spain",
+                    "region": "Canary Islands",
+                    "admin1": "Canary Islands",
+                    "admin2": "Santa Cruz de Tenerife",
+                    "admin3": "Santa Cruz de Tenerife",
+                    "latitude": 28.5033,
+                    "longitude": -16.1969,
+                    "population": 1000,
+                    "feature_code": "PPL",
+                    "query": "San Andrés, Tenerife, Canary Islands, Spain",
+                    "score": 165,
+                    "provider": "open-meteo",
+                    "region_match": True,
+                }
+            ],
+            "warnings": [],
+        },
+    )
+
+    resp = client.get("/api/v1/location-candidates?name=San%20Andr%C3%A9s&country=Spain&region=Tenerife")
+
+    assert resp.status_code == 200
+    assert resp.json()["candidates"][0]["display_name"].startswith("San Andrés")
 
 
 def test_list_categories(client):

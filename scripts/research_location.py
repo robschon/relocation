@@ -119,6 +119,27 @@ def category_requires_freshness(category: dict) -> bool:
     return (category.get("name") or "").strip() in STRICT_FRESHNESS_CATEGORY_NAMES
 
 
+def format_location_context(location: dict) -> str:
+    """Render an exact-location block that reduces same-name place ambiguity."""
+    lines = [
+        "Target location (use this exact place; do not substitute another same-name place):",
+        f"- Name: {location['name']}",
+        f"- Country: {location['country']}",
+    ]
+
+    region = str(location.get("region") or "").strip()
+    if region:
+        lines.append(f"- Region: {region}")
+
+    latitude = location.get("latitude")
+    longitude = location.get("longitude")
+    if latitude is not None and longitude is not None:
+        lines.append(f"- Coordinates: {float(latitude):.5f}, {float(longitude):.5f}")
+
+    lines.append("- If a source is about a different same-name place, ignore it or explicitly note the mismatch.")
+    return "\n".join(lines)
+
+
 def _normalize_iso_date(value: object) -> str | None:
     if value is None:
         return None
@@ -186,12 +207,15 @@ def research_category(
 - Include at least one official source URL and one corroborating secondary URL.
 - If evidence conflicts, state uncertainty in source text and lower confidence."""
 
-    prompt = f"""Research {location['name']}, {location['country']} for the category: {category['name']}.
+    prompt = f"""Research this exact location for the category: {category['name']}.
+
+{format_location_context(location)}
 
 {f"Category description: {category['description']}" if category.get('description') else ""}
 {strict_instruction}
 
 Provide detailed, factual research notes that would help someone evaluating this location for retirement/relocation. Include specific data points, numbers, and comparisons where possible.
+- Do not switch to another city/town/municipality that shares part or all of the same name.
 
 Respond with JSON only (no markdown fences):
 {{

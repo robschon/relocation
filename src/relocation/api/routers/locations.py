@@ -1,13 +1,21 @@
 import re
 from pathlib import Path
 
+import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from relocation.database import get_db
 from relocation.models import Location
-from relocation.schemas import LocationCreate, LocationOut, LocationUpdate
+from relocation.schemas import (
+    LocationCandidateSearchOut,
+    LocationCreate,
+    LocationOut,
+    LocationUpdate,
+)
+from relocation.services.location_candidates import search_location_candidates
 from relocation.services.new_location_enrichment import run_location_post_create_pipeline
 
 router = APIRouter(tags=["locations"])
@@ -40,6 +48,14 @@ def list_locations(db: Session = Depends(get_db)):
     return db.query(Location).order_by(Location.name).all()
 
 
+@router.get("/location-candidates", response_model=LocationCandidateSearchOut)
+def list_location_candidates(name: str, country: str, region: str | None = None):
+    try:
+        return search_location_candidates(name=name, country=country, region=region)
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Location lookup failed: {exc}") from exc
+
+
 @router.get("/locations/{location_id}", response_model=LocationOut)
 def get_location(location_id: int, db: Session = Depends(get_db)):
     loc = db.get(Location, location_id)
@@ -56,9 +72,17 @@ def create_location(
 ):
     loc = Location(**data.model_dump())
     db.add(loc)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail=f'Location "{data.name}" in {data.country} already exists.',
+        ) from exc
     db.refresh(loc)
-    background_tasks.add_task(run_location_post_create_pipeline, loc.id)
+    if loc.latitude is not None and loc.longitude is not None:
+        background_tasks.add_task(run_location_post_create_pipeline, loc.id)
     return loc
 
 

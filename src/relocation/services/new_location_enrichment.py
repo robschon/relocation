@@ -6,6 +6,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+from relocation.database import SessionLocal
+from relocation.models import Location
+
 LOGGER = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -54,6 +57,18 @@ def run_location_post_create_pipeline(location_id: int) -> None:
     if location_id <= 0:
         LOGGER.error("Skipping post-create enrichment; invalid location_id=%s", location_id)
         return
+
+    with SessionLocal() as session:
+        location = session.get(Location, location_id)
+        if not location:
+            LOGGER.error("Skipping post-create enrichment; location_id=%s not found", location_id)
+            return
+        if location.latitude is None or location.longitude is None:
+            LOGGER.info(
+                "Skipping post-create enrichment; location_id=%s has no confirmed coordinates",
+                location_id,
+            )
+            return
 
     if not OCEAN_SCRIPT.exists() or not SWIMMING_SCRIPT.exists() or not BEACH_ACCESSIBILITY_SCRIPT.exists():
         LOGGER.error(

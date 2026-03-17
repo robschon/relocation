@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   getLocations,
+  getLocationCandidates,
   createLocation,
   deleteLocation,
   getRankings,
@@ -79,6 +80,7 @@ function buildCountryCodeByName() {
     venezuela: 'VE',
     palestine: 'PS',
     kosovo: 'XK',
+    curacao: 'CW',
   }
   for (const [key, code] of Object.entries(aliases)) {
     map[key] = code
@@ -128,13 +130,29 @@ function formatFullResearchTitle(value) {
   }).format(parsed)
 }
 
+const emptyForm = {
+  name: '',
+  country: '',
+  region: '',
+  population: '',
+  description: '',
+  latitude: '',
+  longitude: '',
+}
+
 export default function Locations() {
   const [locations, setLocations] = useState([])
   const [researchJobs, setResearchJobs] = useState({})
   const [activeLogLocationId, setActiveLogLocationId] = useState(null)
   const [showForm, setShowForm] = useState(false)
   const [countryFilter, setCountryFilter] = useState('')
-  const [form, setForm] = useState({ name: '', country: '', region: '', population: '', description: '' })
+  const [form, setForm] = useState(emptyForm)
+  const [candidateResults, setCandidateResults] = useState([])
+  const [candidateLoading, setCandidateLoading] = useState(false)
+  const [candidateError, setCandidateError] = useState('')
+  const [candidateWarnings, setCandidateWarnings] = useState([])
+  const [selectedCandidate, setSelectedCandidate] = useState(null)
+  const [submitting, setSubmitting] = useState(false)
   const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
   const countryCodeByName = useMemo(() => buildCountryCodeByName(), [])
@@ -164,18 +182,95 @@ export default function Locations() {
   }
   useEffect(() => { load() }, [])
 
+  const resetCandidateSelection = () => {
+    setCandidateResults([])
+    setCandidateError('')
+    setCandidateWarnings([])
+    setSelectedCandidate(null)
+  }
+
+  const handleIdentityFieldChange = (field, value) => {
+    setForm((prev) => ({
+      ...prev,
+      [field]: value,
+      latitude: '',
+      longitude: '',
+    }))
+    resetCandidateSelection()
+  }
+
+  const handleCoordinateFieldChange = (field, value) => {
+    setForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }))
+    setSelectedCandidate(null)
+  }
+
+  const handleLookupCandidates = async () => {
+    if (!form.name.trim() || !form.country.trim()) {
+      setCandidateError('Enter a name and country first.')
+      setCandidateResults([])
+      return
+    }
+
+    setCandidateLoading(true)
+    setCandidateError('')
+    setSelectedCandidate(null)
+    try {
+      const result = await getLocationCandidates({
+        name: form.name.trim(),
+        country: form.country.trim(),
+        region: form.region.trim() || undefined,
+      })
+      const results = result.candidates || []
+      setCandidateResults(results)
+      setCandidateWarnings(result.warnings || [])
+      if (results.length === 0 && (!result.warnings || result.warnings.length === 0)) {
+        setCandidateError('No exact matches found. Enter confirmed coordinates manually if you still want to add this place.')
+      }
+    } catch (error) {
+      setCandidateResults([])
+      setCandidateWarnings([])
+      setCandidateError(error.message || 'Failed to look up location candidates.')
+    } finally {
+      setCandidateLoading(false)
+    }
+  }
+
+  const handleSelectCandidate = (candidate) => {
+    setSelectedCandidate(candidate)
+    setForm((prev) => ({
+      ...prev,
+      region: prev.region || candidate.region || '',
+      latitude: String(candidate.latitude),
+      longitude: String(candidate.longitude),
+    }))
+    setCandidateError('')
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
-    await createLocation({
-      ...form,
-      population: form.population ? Number(form.population) : null,
-      region: form.region || null,
-      description: form.description || null,
-    })
-    toast.success(`${form.name} added`)
-    setForm({ name: '', country: '', region: '', population: '', description: '' })
-    setShowForm(false)
-    load()
+    setSubmitting(true)
+    try {
+      await createLocation({
+        ...form,
+        latitude: form.latitude ? Number(form.latitude) : null,
+        longitude: form.longitude ? Number(form.longitude) : null,
+        population: form.population ? Number(form.population) : null,
+        region: form.region || null,
+        description: form.description || null,
+      })
+      toast.success(`${form.name} added`)
+      setForm(emptyForm)
+      resetCandidateSelection()
+      setShowForm(false)
+      await load()
+    } catch (error) {
+      toast.error(error.message || 'Failed to create location')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const handleDelete = async (id, name) => {
@@ -286,22 +381,94 @@ export default function Locations() {
         <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow p-4 mb-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
           <input
             required placeholder="Name" value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            onChange={(e) => handleIdentityFieldChange('name', e.target.value)}
             className="border rounded px-3 py-2 text-sm"
           />
           <input
             required placeholder="Country" value={form.country}
-            onChange={(e) => setForm({ ...form, country: e.target.value })}
+            onChange={(e) => handleIdentityFieldChange('country', e.target.value)}
             className="border rounded px-3 py-2 text-sm"
           />
           <input
             placeholder="Region" value={form.region}
-            onChange={(e) => setForm({ ...form, region: e.target.value })}
+            onChange={(e) => handleIdentityFieldChange('region', e.target.value)}
             className="border rounded px-3 py-2 text-sm"
           />
           <input
             placeholder="Population" type="number" value={form.population}
             onChange={(e) => setForm({ ...form, population: e.target.value })}
+            className="border rounded px-3 py-2 text-sm"
+          />
+          <div className="sm:col-span-2 rounded border border-sky-200 bg-sky-50 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-sky-900">Confirm the exact place</p>
+                <p className="text-xs text-sky-700">Look up a candidate or enter confirmed coordinates manually. New locations now require coordinates before creation.</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleLookupCandidates}
+                disabled={candidateLoading}
+                className={`px-3 py-2 rounded text-sm ${candidateLoading ? 'bg-sky-100 text-sky-500 cursor-not-allowed' : 'bg-sky-600 text-white hover:bg-sky-700'}`}
+              >
+                {candidateLoading ? 'Looking up…' : 'Find Matches'}
+              </button>
+            </div>
+            {candidateError && <p className="mt-3 text-xs text-rose-600">{candidateError}</p>}
+            {candidateWarnings.length > 0 && (
+              <div className="mt-3 space-y-1">
+                {candidateWarnings.map((warning) => (
+                  <p key={warning} className="text-xs text-amber-700">{warning}</p>
+                ))}
+              </div>
+            )}
+            {selectedCandidate && (
+              <div className="mt-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                Using match: {selectedCandidate.display_name} ({selectedCandidate.latitude.toFixed(5)}, {selectedCandidate.longitude.toFixed(5)})
+              </div>
+            )}
+            {candidateResults.length > 0 && (
+              <div className="mt-3 space-y-2">
+                {candidateResults.map((candidate) => (
+                  <button
+                    key={`${candidate.display_name}-${candidate.latitude}-${candidate.longitude}`}
+                    type="button"
+                    onClick={() => handleSelectCandidate(candidate)}
+                    className="w-full rounded border border-sky-200 bg-white px-3 py-2 text-left text-sm hover:border-sky-400 hover:bg-sky-50"
+                  >
+                    <div className="font-medium text-gray-900">{candidate.display_name}</div>
+                    <div className="mt-1 text-xs text-gray-500">
+                      {candidate.latitude.toFixed(5)}, {candidate.longitude.toFixed(5)}
+                      {candidate.feature_code ? ` • ${candidate.feature_code}` : ''}
+                      {candidate.population ? ` • pop. ${candidate.population.toLocaleString()}` : ''}
+                      {candidate.provider ? ` • ${candidate.provider}` : ''}
+                    </div>
+                    {!candidate.region_match && (
+                      <div className="mt-1 text-xs text-amber-700">
+                        Region mismatch: this result does not appear to match “{form.region || 'the requested region'}”.
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <input
+            required
+            placeholder="Latitude"
+            type="number"
+            step="any"
+            value={form.latitude}
+            onChange={(e) => handleCoordinateFieldChange('latitude', e.target.value)}
+            className="border rounded px-3 py-2 text-sm"
+          />
+          <input
+            required
+            placeholder="Longitude"
+            type="number"
+            step="any"
+            value={form.longitude}
+            onChange={(e) => handleCoordinateFieldChange('longitude', e.target.value)}
             className="border rounded px-3 py-2 text-sm"
           />
           <textarea
@@ -310,8 +477,12 @@ export default function Locations() {
             className="border rounded px-3 py-2 text-sm sm:col-span-2"
             rows={2}
           />
-          <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 sm:col-span-2">
-            Create Location
+          <button
+            type="submit"
+            disabled={!form.latitude || !form.longitude || submitting}
+            className={`px-4 py-2 rounded text-sm sm:col-span-2 ${form.latitude && form.longitude && !submitting ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-200 text-gray-500 cursor-not-allowed'}`}
+          >
+            {submitting ? 'Creating…' : 'Create Location'}
           </button>
         </form>
       )}

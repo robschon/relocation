@@ -5,11 +5,58 @@ Step-by-step playbook for adding a new relocation candidate to the project.
 ## Prerequisites
 
 - Database initialized (`uv run relocation init`)
-- For AI research script: API server running (`uv run relocation serve`) and `OPENAI_API_KEY` set
+- For API-backed flows and AI research scripts: backend running (`uv run uvicorn relocation.api.app:app --host 127.0.0.1 --port 8000`)
+- For OpenAI research scripts: `OPENAI_API_KEY` set
 
 ## Steps
 
-### 1. Add the location to the database
+### 1. Confirm the exact place first
+
+The current workflow is moving toward exact-place disambiguation before creation. Prefer confirming the exact candidate and coordinates before adding a new location.
+
+Recommended options:
+
+- Frontend: use the add-location flow and click `Find Matches`
+- API: call `GET /api/v1/location-candidates`
+
+Example:
+
+```bash
+curl -sS "http://127.0.0.1:8000/api/v1/location-candidates?name=Cascais&country=Portugal&region=Lisbon%20Metropolitan%20Area"
+```
+
+What to confirm before creating the record:
+
+- `display_name` matches the intended place
+- `latitude` and `longitude` are correct
+- `region` is right, especially for ambiguous same-name places
+
+Notes:
+
+- Creating a duplicate location now returns `409 Conflict`.
+- Automatic post-create enrichment only runs when the location has confirmed coordinates.
+
+### 2. Create the location record
+
+Recommended: create the location through the frontend or API so you can include confirmed coordinates up front.
+
+API example:
+
+```bash
+curl -sS -X POST "http://127.0.0.1:8000/api/v1/locations" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Cascais",
+    "country": "Portugal",
+    "region": "Lisbon Metropolitan Area",
+    "latitude": 38.6979,
+    "longitude": -9.4215,
+    "population": 214000,
+    "description": "Affluent coastal town west of Lisbon with beaches, historic center, and excellent rail connection to the capital"
+  }'
+```
+
+Legacy CLI path:
 
 ```bash
 uv run relocation location add "<City>" "<Country>" \
@@ -26,7 +73,12 @@ uv run relocation location add "Cascais" "Portugal" \
   --desc "Affluent coastal town west of Lisbon with beaches, historic center, and excellent rail connection to the capital"
 ```
 
-### 2. Write the research file
+CLI caveat:
+
+- `relocation location add` does not currently accept `latitude` or `longitude`
+- If you create a location without coordinates, the backend accepts it, but automatic enrichment is skipped until coordinates are added later
+
+### 3. Write the research file
 
 Create `research/<city>-<country>.md` following the established template. Use any existing file as reference (e.g., `research/funchal-madeira-portugal.md`).
 
@@ -195,7 +247,7 @@ Create `research/<city>-<country>.md` following the established template. Use an
 - Property and cost tables use local currency with USD equivalent
 - Visa sections use requirement/detail tables
 
-### 3. Score all 13 categories in the database
+### 4. Score all 13 categories in the database
 
 Enter scores using the CLI. Each score needs the location name, a category name (partial match works), a score 1-10, and notes:
 
@@ -217,21 +269,43 @@ uv run relocation score set "<City>" "Environmental" <score> --notes "..."
 
 **Note**: Use `"Climate / weather"` (not just `"Climate"`) and `"Natural beauty"` (not just `"Natural"`) to avoid ambiguous matches with the Environmental category.
 
-### 4. Add research notes to the database
+### 5. Add research notes to the database
 
-Insert a concise summary of each category's research into the `research` table. Each entry should be a dense paragraph of key facts, data points, and comparisons — essentially a compressed version of the research file section.
+Insert a concise summary of each category's research into the `research` table. Each entry should be a dense paragraph of key facts, data points, and comparisons, essentially a compressed version of the research file section.
 
 ```sql
-INSERT INTO research (location_id, category_id, content, source, source_date, created_at)
-VALUES (<loc_id>, <cat_id>, '<concise research summary>', '<sources>', '<date>', datetime('now'));
+INSERT INTO research (
+  location_id,
+  category_id,
+  content,
+  source,
+  source_date,
+  source_checked_at,
+  verification_status,
+  confidence,
+  created_at
+)
+VALUES (
+  <loc_id>,
+  <cat_id>,
+  '<concise research summary>',
+  '<sources>',
+  '<published_date_or_null>',
+  '<checked_date_or_null>',
+  'needs_review',
+  NULL,
+  datetime('now')
+);
 ```
 
 - One entry per category (13 total)
 - Content should be ~1-3 sentences of key facts with numbers
 - Include source attribution
-- Use `source_date` for when the research was conducted
+- Use `source_date` for when the source was published, if known
+- Use `source_checked_at` for when you verified it
+- Visa/tax research should include verification metadata when possible because the API enforces stricter evidence rules there
 
-### 5. Add pros and cons
+### 6. Add pros and cons
 
 Insert pros and cons into the `pros_cons` table, each tied to a specific category. Aim for ~8 pros and ~8 cons per location.
 
@@ -249,13 +323,13 @@ Guidelines:
 - A category can have multiple pros or cons if warranted
 - Cross-reference other locations where useful (e.g., "20-30% higher than Funchal")
 
-### 6. (Optional) Run AI research script
+### 7. (Optional) Run AI research script
 
-Populates the `research` and `visa_info` database tables with AI-generated structured data, and now also writes a bespoke one-sentence location description to `locations.description` (glossy card copy). Requires the API server to be running.
+Populates the `research` and `visa_info` tables with AI-generated structured data, and also writes a bespoke one-sentence location description to `locations.description`. Requires the backend API to be running.
 
 ```bash
-# Start the API server (in another terminal)
-uv run relocation serve
+# Start the backend API (in another terminal)
+uv run uvicorn relocation.api.app:app --host 127.0.0.1 --port 8000
 
 # Use OpenAI script (requires OPENAI_API_KEY)
 # Run research for all categories
@@ -279,7 +353,13 @@ uv run python scripts/research_location.py "<City>" --skip-description
 uv run python scripts/research_location.py "<City>" --force-description
 ```
 
-### 7. Bespoke description quality check
+What changed in the current generation flow:
+
+- Research prompts are now more location-specific and may use region plus confirmed coordinates to avoid drifting to the wrong place
+- Re-generated entries may come back with `needs_review` verification status until manually checked
+- Slugs and exported research filenames for accented place names may still look rough, so verify the generated markdown path before linking it elsewhere
+
+### 8. Bespoke description quality check
 
 After script run, sanity-check the card copy in DB:
 
@@ -293,11 +373,14 @@ Quality bar:
 - No numeric score notation (no `X/10`)
 - Sounds distinct from other locations (not formulaic)
 
-### 8. Verify
+### 9. Verify
 
 ```bash
 # Location details and all scores
 uv run relocation location show "<City>"
+
+# Confirm coordinates are present
+sqlite3 data/relocation.db "SELECT latitude, longitude FROM locations WHERE name = '<City>';"
 
 # Full ranking with new location included
 uv run relocation rank

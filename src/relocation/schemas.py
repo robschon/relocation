@@ -49,6 +49,29 @@ class LocationOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class LocationCandidateOut(BaseModel):
+    name: str
+    display_name: str
+    country: Optional[str] = None
+    region: Optional[str] = None
+    admin1: Optional[str] = None
+    admin2: Optional[str] = None
+    admin3: Optional[str] = None
+    latitude: float
+    longitude: float
+    population: Optional[int] = None
+    feature_code: Optional[str] = None
+    query: str
+    score: int
+    provider: Optional[str] = None
+    region_match: bool = True
+
+
+class LocationCandidateSearchOut(BaseModel):
+    candidates: list[LocationCandidateOut]
+    warnings: list[str] = Field(default_factory=list)
+
+
 # --- Categories ---
 
 

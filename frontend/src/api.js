@@ -18,6 +18,10 @@ async function request(url, options = {}) {
 // Locations
 export const getLocations = () => request(`${BASE}/locations`)
 export const getLocation = (id) => request(`${BASE}/locations/${id}`)
+export const getLocationCandidates = (params = {}) => {
+  const qs = new URLSearchParams(params).toString()
+  return request(`${BASE}/location-candidates${qs ? '?' + qs : ''}`)
+}
 export const createLocation = (data) => request(`${BASE}/locations`, { method: 'POST', body: JSON.stringify(data) })
 export const updateLocation = (id, data) => request(`${BASE}/locations/${id}`, { method: 'PUT', body: JSON.stringify(data) })
 export const deleteLocation = (id) => request(`${BASE}/locations/${id}`, { method: 'DELETE' })

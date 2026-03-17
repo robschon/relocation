@@ -29,6 +29,7 @@ from research_location_openai import (
     api_post,
     api_put,
     category_requires_freshness,
+    format_location_context,
     get_profile_answers,
     get_profile_context,
     generate_bespoke_description,
@@ -89,7 +90,9 @@ def score_category(
     category: dict,
     research_content: str,
 ) -> dict:
-    prompt = f"""You are scoring one relocation category for {location['name']}, {location['country']}.
+    prompt = f"""You are scoring one relocation category for an exact location.
+
+{format_location_context(location)}
 
 Category: {category['name']}
 Category description: {category.get('description') or 'N/A'}
@@ -105,6 +108,8 @@ Scoring guidance:
 - 6-7 good with tradeoffs
 - 4-5 notable weaknesses
 - 1-3 serious concerns
+- Score only the exact location above, not another same-name place.
+- If the research evidence appears to describe a different location, call that out briefly in `notes`.
 """
     result = generate_structured_output(
         client,
@@ -144,7 +149,9 @@ def generate_pros_cons(
             f"- id={cid} | {category['name']} | score={score_entry['score']} | notes={score_entry.get('notes') or ''} | research={excerpt}"
         )
 
-    prompt = f"""Generate relocation pros/cons for {location['name']}, {location['country']}.
+    prompt = f"""Generate relocation pros/cons for this exact location.
+
+{format_location_context(location)}
 
 Use only the evidence below:
 {chr(10).join(context_rows)}
@@ -157,6 +164,7 @@ Rules:
 - Content should be specific and concise (about 12-24 words).
 - Pros should highlight strongest strengths.
 - Cons should be honest tradeoffs or risks.
+- Do not introduce facts from another same-name place.
 """
     result = generate_structured_output(
         client,

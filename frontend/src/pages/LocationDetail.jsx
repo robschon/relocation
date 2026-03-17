@@ -34,7 +34,15 @@ export default function LocationDetail() {
     setCategories(cats)
     setProsCons(pc)
     setResearch(res)
-    setEditForm({ name: loc.name, country: loc.country, region: loc.region || '', population: loc.population || '', description: loc.description || '' })
+    setEditForm({
+      name: loc.name,
+      country: loc.country,
+      region: loc.region || '',
+      latitude: loc.latitude ?? '',
+      longitude: loc.longitude ?? '',
+      population: loc.population || '',
+      description: loc.description || '',
+    })
   }
 
   useEffect(() => {
@@ -47,6 +55,8 @@ export default function LocationDetail() {
   const handleSave = async () => {
     await updateLocation(id, {
       ...editForm,
+      latitude: editForm.latitude === '' ? null : Number(editForm.latitude),
+      longitude: editForm.longitude === '' ? null : Number(editForm.longitude),
       population: editForm.population ? Number(editForm.population) : null,
       region: editForm.region || null,
       description: editForm.description || null,
@@ -139,6 +149,8 @@ export default function LocationDetail() {
               <input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} className="border rounded px-3 py-1 text-sm" placeholder="Name" />
               <input value={editForm.country} onChange={(e) => setEditForm({ ...editForm, country: e.target.value })} className="border rounded px-3 py-1 text-sm" placeholder="Country" />
               <input value={editForm.region} onChange={(e) => setEditForm({ ...editForm, region: e.target.value })} className="border rounded px-3 py-1 text-sm" placeholder="Region" />
+              <input value={editForm.latitude} onChange={(e) => setEditForm({ ...editForm, latitude: e.target.value })} className="border rounded px-3 py-1 text-sm" placeholder="Latitude" type="number" step="any" />
+              <input value={editForm.longitude} onChange={(e) => setEditForm({ ...editForm, longitude: e.target.value })} className="border rounded px-3 py-1 text-sm" placeholder="Longitude" type="number" step="any" />
               <input value={editForm.population} onChange={(e) => setEditForm({ ...editForm, population: e.target.value })} className="border rounded px-3 py-1 text-sm" placeholder="Population" type="number" />
               <textarea value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} className="border rounded px-3 py-1 text-sm sm:col-span-2" placeholder="Description" rows={2} />
               <div className="sm:col-span-2 flex gap-2">
@@ -150,6 +162,11 @@ export default function LocationDetail() {
             <div>
               <h1 className="text-2xl font-bold">{location.name}</h1>
               <p className="text-gray-500">{location.country}{location.region ? `, ${location.region}` : ''}</p>
+              {(location.latitude !== null && location.longitude !== null) && (
+                <p className="text-sm text-gray-400">
+                  Coordinates: {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}
+                </p>
+              )}
               {location.population && <p className="text-sm text-gray-400">Population: {location.population.toLocaleString()}</p>}
               {location.description && <p className="text-gray-600 mt-2">{location.description}</p>}
             </div>

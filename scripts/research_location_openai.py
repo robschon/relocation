@@ -22,7 +22,7 @@ from pydantic import BaseModel, RootModel, ValidationError
 
 API_BASE = "http://localhost:8000/api/v1"
 MODEL = os.getenv("OPENAI_MODEL", "gpt-5.4")
-MAX_RETRIES = 2
+MAX_RETRIES = 3
 RETRY_DELAY = 2
 STRICT_FRESHNESS_CATEGORY_NAMES = {"Visa / residency feasibility", "Tax implications"}
 BEACH_ACCESSIBILITY_CATEGORY_NAMES = {"beachaccessibility", "beachaccesibility"}
@@ -223,6 +223,27 @@ def country_is_united_states(country: str | None) -> bool:
     return normalized in {"unitedstates", "unitedstatesofamerica", "usa", "us"}
 
 
+def format_location_context(location: dict) -> str:
+    """Render an exact-location block that reduces same-name place ambiguity."""
+    lines = [
+        "Target location (use this exact place; do not substitute another same-name place):",
+        f"- Name: {location['name']}",
+        f"- Country: {location['country']}",
+    ]
+
+    region = str(location.get("region") or "").strip()
+    if region:
+        lines.append(f"- Region: {region}")
+
+    latitude = location.get("latitude")
+    longitude = location.get("longitude")
+    if latitude is not None and longitude is not None:
+        lines.append(f"- Coordinates: {float(latitude):.5f}, {float(longitude):.5f}")
+
+    lines.append("- If a source is about a different same-name place, ignore it or explicitly note the mismatch.")
+    return "\n".join(lines)
+
+
 def infer_profile_flags(profile_answers: dict[str, str]) -> dict[str, bool]:
     combined = " ".join(profile_answers.values()).lower()
     us_rights_patterns = [
@@ -244,6 +265,18 @@ def infer_profile_flags(profile_answers: dict[str, str]) -> dict[str, bool]:
     }
 
 
+def _retry_structured_output_prompt(prompt: str, attempt: int) -> str:
+    if attempt == 0:
+        return prompt
+    return f"""{prompt}
+
+IMPORTANT:
+- Return only valid JSON matching the schema exactly.
+- Do not include markdown fences, prose before the JSON, or commentary after it.
+- Keep string values concise enough to avoid truncation.
+- Ensure every JSON string is fully closed and properly escaped."""
+
+
 def generate_structured_output(
     client: OpenAI,
     prompt: str,
@@ -255,7 +288,7 @@ def generate_structured_output(
         try:
             response = client.responses.parse(
                 model=MODEL,
-                input=prompt,
+                input=_retry_structured_output_prompt(prompt, attempt),
                 text_format=text_format,
                 max_output_tokens=max_output_tokens,
             )
@@ -311,7 +344,9 @@ def research_category(
         citizenship_instruction = """Profile signal: the user appears to be a U.S. citizen evaluating a U.S. location.
 Treat visa/residency barriers as effectively none and focus on practical admin/tax residency implications instead."""
 
-    prompt = f"""Research {location['name']}, {location['country']} for the category: {category['name']}.
+    prompt = f"""Research this exact location for the category: {category['name']}.
+
+{format_location_context(location)}
 
 {f"Category description: {category['description']}" if category.get('description') else ""}
 {profile_instruction}
@@ -320,6 +355,8 @@ Treat visa/residency barriers as effectively none and focus on practical admin/t
 {beach_instruction}
 
 Provide detailed, factual research notes that would help someone evaluating this location for retirement/relocation. Include specific data points, numbers, and comparisons where possible.
+Keep the `content` field dense but bounded; aim to stay under roughly 900 words so the structured response remains reliable.
+- Do not switch to another city/town/municipality that shares part or all of the same name.
 
 Return structured data matching the requested schema."""
 
