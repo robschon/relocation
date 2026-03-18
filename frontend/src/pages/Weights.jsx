@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { getCategories, getUsers, getWeights, upsertWeight } from '../api'
 import WeightSlider from '../components/WeightSlider'
 import Spinner from '../components/Spinner'
@@ -9,7 +9,9 @@ export default function Weights() {
   const [categories, setCategories] = useState([])
   const [users, setUsers] = useState([])
   const [weights, setWeights] = useState([])
+  const [localOverrides, setLocalOverrides] = useState({})
   const [loading, setLoading] = useState(true)
+  const pendingSaves = useRef({})
 
   const load = async () => {
     const [cats, us, ws] = await Promise.all([getCategories(), getUsers(), getWeights()])
@@ -22,15 +24,31 @@ export default function Weights() {
   useEffect(() => { load() }, [])
 
   const getWeight = (userId, catId) => {
+    const key = `${userId}-${catId}`
+    if (key in localOverrides) return localOverrides[key]
     const w = weights.find((w) => w.user_id === userId && w.category_id === catId)
     return w ? w.weight : null
   }
 
-  const handleChange = async (userId, catId, value) => {
-    await upsertWeight({ user_id: userId, category_id: catId, weight: value })
-    toast.success('Weight saved')
-    load()
-  }
+  const handleChange = useCallback((userId, catId, value) => {
+    const key = `${userId}-${catId}`
+    setLocalOverrides((prev) => ({ ...prev, [key]: value }))
+
+    if (pendingSaves.current[key]) clearTimeout(pendingSaves.current[key])
+
+    pendingSaves.current[key] = setTimeout(async () => {
+      delete pendingSaves.current[key]
+      await upsertWeight({ user_id: userId, category_id: catId, weight: value })
+      toast.success('Weight saved')
+      const [, , ws] = await Promise.all([getCategories(), getUsers(), getWeights()])
+      setWeights(ws)
+      setLocalOverrides((prev) => {
+        const next = { ...prev }
+        delete next[key]
+        return next
+      })
+    }, 600)
+  }, [])
 
   if (loading) return <Spinner label="Loading weights..." />
 
