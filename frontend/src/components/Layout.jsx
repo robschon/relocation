@@ -1,17 +1,38 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 
-const links = [
-  { to: '/', label: 'Dashboard' },
-  { to: '/locations', label: 'Locations' },
-  { to: '/scores', label: 'Score Matrix' },
-  { to: '/weights', label: 'Weights' },
-  { to: '/research', label: 'Research' },
-  { to: '/research-jobs', label: 'Research Jobs' },
-  { to: '/pros-cons', label: 'Pros & Cons' },
-  { to: '/visa', label: 'Visa Info' },
-  { to: '/ocean-temperatures', label: 'Ocean Temps' },
-  { to: '/profile', label: 'Profile' },
+const navGroups = [
+  {
+    section: 'Overview',
+    items: [
+      { to: '/', label: 'Dashboard' },
+      { to: '/compare', label: 'Compare' },
+    ],
+  },
+  {
+    section: 'Data',
+    items: [
+      { to: '/locations', label: 'Locations' },
+      { to: '/scores', label: 'Score Matrix' },
+      { to: '/weights', label: 'Weights' },
+    ],
+  },
+  {
+    section: 'Research',
+    items: [
+      { to: '/research', label: 'Research' },
+      { to: '/research-jobs', label: 'Research Jobs' },
+    ],
+  },
+  {
+    section: 'Details',
+    items: [
+      { to: '/pros-cons', label: 'Pros & Cons' },
+      { to: '/visa', label: 'Visa Info' },
+      { to: '/ocean-temperatures', label: 'Ocean Temps' },
+      { to: '/profile', label: 'Profile' },
+    ],
+  },
 ]
 
 export default function Layout() {
@@ -60,18 +81,27 @@ export default function Layout() {
           Relocation Assistant
         </div>
         <ul className="mt-2">
-          {links.map(({ to, label }) => (
-            <li key={to}>
-              <NavLink
-                to={to}
-                end={to === '/'}
-                onClick={handleNavClick}
-                className={({ isActive }) =>
-                  `block px-4 py-2 text-sm hover:bg-gray-800 ${isActive ? 'bg-gray-800 font-semibold text-blue-400' : 'text-gray-300'}`
-                }
-              >
-                {label}
-              </NavLink>
+          {navGroups.map(({ section, items }) => (
+            <li key={section}>
+              <div className="px-4 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                {section}
+              </div>
+              <ul>
+                {items.map(({ to, label }) => (
+                  <li key={to}>
+                    <NavLink
+                      to={to}
+                      end={to === '/'}
+                      onClick={handleNavClick}
+                      className={({ isActive }) =>
+                        `block px-4 py-2 text-sm hover:bg-gray-800 ${isActive ? 'bg-gray-800 font-semibold text-blue-400' : 'text-gray-300'}`
+                      }
+                    >
+                      {label}
+                    </NavLink>
+                  </li>
+                ))}
+              </ul>
             </li>
           ))}
         </ul>

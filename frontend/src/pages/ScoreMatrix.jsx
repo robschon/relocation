@@ -4,6 +4,8 @@ import { sortLocationsByOverallRank } from '../utils/rankings'
 import Spinner from '../components/Spinner'
 import EmptyState from '../components/EmptyState'
 import { toast } from 'sonner'
+import useSortableTable from '../hooks/useSortableTable'
+import SortHeader from '../components/SortHeader'
 
 function scoreColor(score) {
   if (score === null || score === undefined) return 'bg-gray-100 text-gray-400'
@@ -42,6 +44,9 @@ export default function ScoreMatrix() {
     const normalizedFilter = countryFilter.trim().toLowerCase()
     return locations.filter((loc) => loc.country?.trim().toLowerCase() === normalizedFilter)
   }, [locations, countryFilter])
+
+  const { sortKey, sortDirection, toggleSort, sortedData: sortedLocations } = useSortableTable(filteredLocations)
+  const displayLocations = sortKey ? sortedLocations : filteredLocations
 
   const getScore = (locId, catId) => {
     const s = scores.find((s) => s.location_id === locId && s.category_id === catId)
@@ -96,7 +101,7 @@ export default function ScoreMatrix() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-gray-50">
-              <th className="py-2 px-3 text-left font-medium text-gray-600 sticky left-0 bg-gray-50">Location</th>
+              <SortHeader label="Location" sortKey="name" currentSortKey={sortKey} sortDirection={sortDirection} onToggle={toggleSort} className="py-2 px-3 text-left font-medium text-gray-600 sticky left-0 bg-gray-50" />
               {categories.map((cat) => (
                 <th key={cat.id} className="py-2 px-3 text-center font-medium text-gray-600 min-w-[80px]">
                   <span className="text-xs">{cat.name}</span>
@@ -105,7 +110,7 @@ export default function ScoreMatrix() {
             </tr>
           </thead>
           <tbody>
-            {filteredLocations.map((loc) => (
+            {displayLocations.map((loc) => (
               <tr key={loc.id} className="border-b hover:bg-gray-50">
                 <td className="py-2 px-3 font-medium sticky left-0 bg-white">{loc.name}</td>
                 {categories.map((cat) => {

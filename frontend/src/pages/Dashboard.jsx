@@ -4,6 +4,61 @@ import { getRankings, getLocations, getCategories } from '../api'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts'
 import Spinner from '../components/Spinner'
 import EmptyState from '../components/EmptyState'
+import useSortableTable from '../hooks/useSortableTable'
+import SortHeader from '../components/SortHeader'
+
+function RankingsTable({ rankings, locationIdForRanking }) {
+  const { sortKey, sortDirection, toggleSort, sortedData } = useSortableTable(rankings)
+
+  const displayData = sortKey ? sortedData : rankings
+
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="border-b text-left text-gray-500">
+          <th className="py-2 w-12">#</th>
+          <SortHeader label="Location" sortKey="location_name" currentSortKey={sortKey} sortDirection={sortDirection} onToggle={toggleSort} className="py-2" />
+          <SortHeader label="Country" sortKey="country" currentSortKey={sortKey} sortDirection={sortDirection} onToggle={toggleSort} className="py-2" />
+          <SortHeader label="Combined" sortKey="overall_score" currentSortKey={sortKey} sortDirection={sortDirection} onToggle={toggleSort} className="py-2 text-right" />
+          <SortHeader label="Husband" sortKey="husband_score" currentSortKey={sortKey} sortDirection={sortDirection} onToggle={toggleSort} className="py-2 text-right" />
+          <SortHeader label="Wife" sortKey="wife_score" currentSortKey={sortKey} sortDirection={sortDirection} onToggle={toggleSort} className="py-2 text-right" />
+        </tr>
+      </thead>
+      <tbody>
+        {displayData.map((r, i) => (
+          <tr key={r.location_name} className="border-b hover:bg-gray-50">
+            <td className="py-2 text-gray-400">{i + 1}</td>
+            <td className="py-2 font-medium">
+              {locationIdForRanking(r) ? (
+                <Link to={`/locations/${locationIdForRanking(r)}`} className="text-blue-700 hover:underline">
+                  {r.location_name}
+                </Link>
+              ) : (
+                r.location_name
+              )}
+            </td>
+            <td className="py-2 text-gray-500">{r.country}</td>
+            <td className="py-2 text-right font-mono">{r.overall_score.toFixed(2)}</td>
+            <td className="py-2 text-right font-mono">{r.husband_score.toFixed(2)}</td>
+            <td className="py-2 text-right font-mono">{r.wife_score.toFixed(2)}</td>
+          </tr>
+        ))}
+        {rankings.length === 0 && (
+          <tr>
+            <td colSpan={6}>
+              <EmptyState
+                icon="chart"
+                title="No rankings yet"
+                message="Add locations and scores to see rankings here."
+                action={<Link to="/locations" className="text-sm text-blue-600 hover:underline">Go to Locations</Link>}
+              />
+            </td>
+          </tr>
+        )}
+      </tbody>
+    </table>
+  )
+}
 
 export default function Dashboard() {
   const [rankings, setRankings] = useState([])
@@ -110,50 +165,7 @@ export default function Dashboard() {
             ))}
           </div>
         </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b text-left text-gray-500">
-              <th className="py-2 w-12">#</th>
-              <th className="py-2">Location</th>
-              <th className="py-2">Country</th>
-              <th className="py-2 text-right">Combined</th>
-              <th className="py-2 text-right">Husband</th>
-              <th className="py-2 text-right">Wife</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rankings.map((r, i) => (
-              <tr key={r.location_name} className="border-b hover:bg-gray-50">
-                <td className="py-2 text-gray-400">{i + 1}</td>
-                <td className="py-2 font-medium">
-                  {locationIdForRanking(r) ? (
-                    <Link to={`/locations/${locationIdForRanking(r)}`} className="text-blue-700 hover:underline">
-                      {r.location_name}
-                    </Link>
-                  ) : (
-                    r.location_name
-                  )}
-                </td>
-                <td className="py-2 text-gray-500">{r.country}</td>
-                <td className="py-2 text-right font-mono">{r.overall_score.toFixed(2)}</td>
-                <td className="py-2 text-right font-mono">{r.husband_score.toFixed(2)}</td>
-                <td className="py-2 text-right font-mono">{r.wife_score.toFixed(2)}</td>
-              </tr>
-            ))}
-            {rankings.length === 0 && (
-              <tr>
-                <td colSpan={6}>
-                  <EmptyState
-                    icon="chart"
-                    title="No rankings yet"
-                    message="Add locations and scores to see rankings here."
-                    action={<Link to="/locations" className="text-sm text-blue-600 hover:underline">Go to Locations</Link>}
-                  />
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+        <RankingsTable rankings={rankings} locationIdForRanking={locationIdForRanking} />
       </div>
 
       {rankings.length > 0 && (

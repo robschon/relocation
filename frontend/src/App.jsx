@@ -12,6 +12,7 @@ import ProsCons from './pages/ProsCons'
 import Visa from './pages/Visa'
 import Profile from './pages/Profile'
 import OceanTemperatures from './pages/OceanTemperatures'
+import Compare from './pages/Compare'
 
 export default function App() {
   return (
@@ -20,6 +21,7 @@ export default function App() {
       <Routes>
         <Route element={<Layout />}>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/compare" element={<Compare />} />
           <Route path="/locations" element={<Locations />} />
           <Route path="/locations/:id" element={<LocationDetail />} />
           <Route path="/scores" element={<ScoreMatrix />} />

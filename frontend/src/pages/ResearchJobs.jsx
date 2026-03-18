@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { getFullResearchJobs } from '../api'
 import Spinner from '../components/Spinner'
 import EmptyState from '../components/EmptyState'
+import useSortableTable from '../hooks/useSortableTable'
+import SortHeader from '../components/SortHeader'
 
 function statusClasses(status) {
   if (status === 'running') return 'bg-blue-100 text-blue-800'
@@ -85,6 +87,17 @@ export default function ResearchJobs() {
   const failedJobs = jobs.filter((job) => job.status === 'failed')
   const selectedJob = jobs.find((job) => job.id === selectedJobId) || null
 
+  const jobsWithSortFields = useMemo(() => jobs.map((job) => ({
+    ...job,
+    _startedDate: job.started_at ? new Date(job.started_at) : new Date(0),
+    _duration: job.started_at
+      ? ((job.finished_at ? new Date(job.finished_at) : new Date()).getTime() - new Date(job.started_at).getTime()) / 1000
+      : 0,
+  })), [jobs])
+
+  const { sortKey, sortDirection, toggleSort, sortedData: sortedJobs } = useSortableTable(jobsWithSortFields)
+  const displayJobs = sortKey ? sortedJobs : jobsWithSortFields
+
   return (
     <div>
       <div className="flex items-start justify-between gap-4 mb-6">
@@ -140,16 +153,16 @@ export default function ResearchJobs() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-gray-50 text-left text-gray-500">
-                    <th className="px-4 py-3">Location</th>
-                    <th className="px-4 py-3">Status</th>
+                    <SortHeader label="Location" sortKey="location_name" currentSortKey={sortKey} sortDirection={sortDirection} onToggle={toggleSort} className="px-4 py-3" />
+                    <SortHeader label="Status" sortKey="status" currentSortKey={sortKey} sortDirection={sortDirection} onToggle={toggleSort} className="px-4 py-3" />
                     <th className="px-4 py-3">Step</th>
-                    <th className="px-4 py-3">Started</th>
-                    <th className="px-4 py-3">Duration</th>
+                    <SortHeader label="Started" sortKey="_startedDate" currentSortKey={sortKey} sortDirection={sortDirection} onToggle={toggleSort} className="px-4 py-3" />
+                    <SortHeader label="Duration" sortKey="_duration" currentSortKey={sortKey} sortDirection={sortDirection} onToggle={toggleSort} className="px-4 py-3" />
                     <th className="px-4 py-3">Latest</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {jobs.map((job) => (
+                  {displayJobs.map((job) => (
                     <tr
                       key={job.id}
                       className={`border-b hover:bg-gray-50 cursor-pointer ${selectedJobId === job.id ? 'bg-blue-50/60' : ''}`}
