@@ -92,6 +92,12 @@ def test_location_add(app, cli_session):
     assert "Lisbon" in result.output
 
 
+def test_location_add_normalizes_country_alias(app, cli_session):
+    result = runner.invoke(app, ["location", "add", "Santa Barbara", "USA"])
+    assert result.exit_code == 0
+    assert "United States" in result.output
+
+
 def test_location_show_by_name(app, cli_session):
     result = runner.invoke(app, ["location", "show", "Lima"])
     assert result.exit_code == 0
@@ -281,6 +287,14 @@ def test_visa_list_filter(app, cli_session):
     assert result.exit_code == 0
     assert "Peru" in result.output
     assert "Mexico" not in result.output
+
+
+def test_visa_list_filter_matches_country_alias(app, cli_session):
+    runner.invoke(app, ["visa", "add", "USA", "No visa required"])
+
+    result = runner.invoke(app, ["visa", "list", "--country", "United States"])
+    assert result.exit_code == 0
+    assert "United States" in result.output
 
 
 def test_visa_show(app, cli_session):

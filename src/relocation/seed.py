@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 
+from relocation.countries import normalize_country_fields
 from relocation.models import Category, Location, User, Weight
 
 SEED_USERS = ["husband", "wife"]
@@ -136,10 +137,20 @@ def seed_database(session: Session) -> dict[str, int]:
 
     # Locations
     for loc_data in SEED_LOCATIONS:
+        normalized_country, normalized_country_code = normalize_country_fields(
+            country=loc_data["country"]
+        )
         if not session.query(Location).filter_by(
-            name=loc_data["name"], country=loc_data["country"]
+            name=loc_data["name"], country=normalized_country
         ).first():
-            session.add(Location(**loc_data))
+            normalized_location = {
+                **loc_data,
+                "country": normalized_country,
+                "country_code": normalized_country_code,
+            }
+            session.add(
+                Location(**normalized_location)
+            )
             counts["locations"] += 1
 
     session.flush()

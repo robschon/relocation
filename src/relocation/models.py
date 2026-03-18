@@ -37,6 +37,7 @@ class Location(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     country: Mapped[str] = mapped_column(String(100), nullable=False)
+    country_code: Mapped[str | None] = mapped_column(String(2))
     region: Mapped[str | None] = mapped_column(String(100))
     latitude: Mapped[float | None] = mapped_column(Float)
     longitude: Mapped[float | None] = mapped_column(Float)
@@ -164,6 +165,7 @@ class VisaInfo(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     country: Mapped[str] = mapped_column(String(100), nullable=False)
+    country_code: Mapped[str | None] = mapped_column(String(2))
     visa_type: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     residency_pathway: Mapped[str | None] = mapped_column(Text)

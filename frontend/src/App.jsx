@@ -13,6 +13,7 @@ import Visa from './pages/Visa'
 import Profile from './pages/Profile'
 import OceanTemperatures from './pages/OceanTemperatures'
 import Compare from './pages/Compare'
+import MapView from './pages/MapView'
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
         <Route element={<Layout />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/compare" element={<Compare />} />
+          <Route path="/map" element={<MapView />} />
           <Route path="/locations" element={<Locations />} />
           <Route path="/locations/:id" element={<LocationDetail />} />
           <Route path="/scores" element={<ScoreMatrix />} />

@@ -4,6 +4,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from relocation.countries import country_matches_query, normalize_country_fields
 from relocation.database import SessionLocal
 from relocation.models import VisaInfo
 
@@ -23,9 +24,11 @@ def add(
     notes: Optional[str] = typer.Option(None, "--notes", "-n", help="Notes"),
 ):
     """Add visa/immigration info for a country."""
+    normalized_country, normalized_country_code = normalize_country_fields(country=country)
     with SessionLocal() as session:
         info = VisaInfo(
-            country=country,
+            country=normalized_country,
+            country_code=normalized_country_code,
             visa_type=visa_type,
             description=description,
             requirements=requirements,
@@ -45,10 +48,17 @@ def list_visa(
 ):
     """List visa info."""
     with SessionLocal() as session:
-        query = session.query(VisaInfo)
+        entries = session.query(VisaInfo).order_by(VisaInfo.country, VisaInfo.visa_type).all()
         if country:
-            query = query.filter(VisaInfo.country.ilike(f"%{country}%"))
-        entries = query.order_by(VisaInfo.country, VisaInfo.visa_type).all()
+            entries = [
+                entry
+                for entry in entries
+                if country_matches_query(
+                    country=entry.country,
+                    country_code=entry.country_code,
+                    query=country,
+                )
+            ]
 
     if not entries:
         console.print("No visa info found.")

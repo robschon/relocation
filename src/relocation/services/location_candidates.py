@@ -5,15 +5,10 @@ from collections.abc import Iterable
 
 import httpx
 
+from relocation.countries import normalize_country_key, resolve_country
+
 OPEN_METEO_GEOCODE_API_URL = "https://geocoding-api.open-meteo.com/v1/search"
 NOMINATIM_GEOCODE_API_URL = "https://nominatim.openstreetmap.org/search"
-COUNTRY_NAME_ALIASES = {
-    "usa": "United States",
-    "us": "United States",
-    "uk": "United Kingdom",
-    "espana": "Spain",
-    "españa": "Spain",
-}
 MAX_RESULTS = 8
 NOMINATIM_USER_AGENT = "relocation-planner/0.1"
 
@@ -23,13 +18,13 @@ def _normalize(value: str | None) -> str:
 
 
 def _normalized_country(value: str | None) -> str:
-    normalized = _normalize(value)
-    return _normalize(COUNTRY_NAME_ALIASES.get(normalized, value or ""))
+    resolved = resolve_country(country=value)
+    return normalize_country_key(resolved.display_name or value)
 
 
 def _query_country(value: str | None) -> str:
-    normalized = _normalize(value)
-    return COUNTRY_NAME_ALIASES.get(normalized, (value or "").strip())
+    resolved = resolve_country(country=value)
+    return (resolved.display_name or value or "").strip()
 
 
 def _clean_location_name(value: str) -> str:

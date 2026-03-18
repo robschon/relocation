@@ -59,6 +59,7 @@ function buildCountryCodeByName() {
     france: 'FR',
     vietnam: 'VN',
     'viet nam': 'VN',
+    'cabo verde': 'CV',
     'u s a': 'US',
     uk: 'GB',
     'u k': 'GB',
@@ -157,7 +158,10 @@ export default function Locations() {
   const navigate = useNavigate()
   const countryCodeByName = useMemo(() => buildCountryCodeByName(), [])
 
-  const flagEmojiForCountry = (country) => {
+  const flagEmojiForCountry = (country, countryCode) => {
+    const normalizedCode = (countryCode || '').trim().toUpperCase()
+    if (normalizedCode) return codeToFlagEmoji(normalizedCode)
+
     const normalized = normalizeCountryName(country)
     const code = countryCodeByName[normalized]
     if (code) return codeToFlagEmoji(code)
@@ -491,7 +495,7 @@ export default function Locations() {
         {filteredLocations.map((loc) => {
           const job = researchJobs[loc.id]
           const isRunning = job?.status === 'running' || job?.status === 'queued'
-          const flagEmoji = flagEmojiForCountry(loc.country)
+          const flagEmoji = flagEmojiForCountry(loc.country, loc.country_code)
           const fullResearchBadge = formatFullResearchBadge(loc.full_research_ran_at)
           const fullResearchTitle = formatFullResearchTitle(loc.full_research_ran_at)
           return (

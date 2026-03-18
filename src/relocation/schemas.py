@@ -12,6 +12,7 @@ VerificationStatus = Literal["verified", "needs_review", "stale"]
 class LocationCreate(BaseModel):
     name: str
     country: str
+    country_code: Optional[str] = None
     region: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
@@ -23,6 +24,7 @@ class LocationCreate(BaseModel):
 class LocationUpdate(BaseModel):
     name: Optional[str] = None
     country: Optional[str] = None
+    country_code: Optional[str] = None
     region: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
@@ -36,6 +38,7 @@ class LocationOut(BaseModel):
     id: int
     name: str
     country: str
+    country_code: Optional[str]
     region: Optional[str]
     latitude: Optional[float]
     longitude: Optional[float]
@@ -183,6 +186,7 @@ class ProConOut(BaseModel):
 
 class VisaCreate(BaseModel):
     country: str
+    country_code: Optional[str] = None
     visa_type: str
     description: Optional[str] = None
     residency_pathway: Optional[str] = None
@@ -198,6 +202,9 @@ class VisaCreate(BaseModel):
 
 
 class VisaUpdate(BaseModel):
+    country: Optional[str] = None
+    country_code: Optional[str] = None
+    visa_type: Optional[str] = None
     description: Optional[str] = None
     residency_pathway: Optional[str] = None
     requirements: Optional[str] = None
@@ -214,6 +221,7 @@ class VisaUpdate(BaseModel):
 class VisaOut(BaseModel):
     id: int
     country: str
+    country_code: Optional[str]
     visa_type: str
     description: Optional[str]
     residency_pathway: Optional[str]

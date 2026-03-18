@@ -2,6 +2,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from relocation.config import DATA_DIR, DATABASE_URL
+from relocation.countries import normalize_country_fields
 
 
 class Base(DeclarativeBase):
@@ -82,13 +83,31 @@ def _run_sqlite_compat_migrations() -> None:
         connection.exec_driver_sql("DROP TABLE scores")
         connection.exec_driver_sql("ALTER TABLE scores_new RENAME TO scores")
 
+    def backfill_country_metadata(connection, table: str) -> None:
+        rows = connection.exec_driver_sql(
+            f"SELECT id, country, country_code FROM {table}"
+        ).fetchall()
+        for row in rows:
+            record_id, country, country_code = row
+            normalized_country, normalized_code = normalize_country_fields(
+                country=country,
+                country_code=country_code,
+            )
+            if normalized_country != country or normalized_code != country_code:
+                connection.exec_driver_sql(
+                    f"UPDATE {table} SET country = ?, country_code = ? WHERE id = ?",
+                    (normalized_country, normalized_code, record_id),
+                )
+
     with engine.begin() as connection:
         ensure_score_range_allows_zero(connection)
 
         # locations
+        ensure_column(connection, "locations", "country_code", "TEXT")
         ensure_column(connection, "locations", "latitude", "FLOAT")
         ensure_column(connection, "locations", "longitude", "FLOAT")
         ensure_column(connection, "locations", "full_research_ran_at", "DATETIME")
+        backfill_country_metadata(connection, "locations")
 
         # research
         ensure_column(connection, "research", "source_urls", "TEXT")
@@ -102,6 +121,7 @@ def _run_sqlite_compat_migrations() -> None:
         ensure_column(connection, "research", "confidence", "FLOAT")
 
         # visa_info
+        ensure_column(connection, "visa_info", "country_code", "TEXT")
         ensure_column(connection, "visa_info", "source_urls", "TEXT")
         ensure_column(connection, "visa_info", "source_published_at", "DATE")
         ensure_column(connection, "visa_info", "source_checked_at", "DATE")
@@ -112,3 +132,4 @@ def _run_sqlite_compat_migrations() -> None:
             "TEXT NOT NULL DEFAULT 'needs_review'",
         )
         ensure_column(connection, "visa_info", "confidence", "FLOAT")
+        backfill_country_metadata(connection, "visa_info")

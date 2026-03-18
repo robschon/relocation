@@ -17,6 +17,7 @@ def test_create_location(client):
     })
     assert resp.status_code == 201
     assert resp.json()["name"] == "Lisbon"
+    assert resp.json()["country_code"] == "PT"
     assert resp.json()["full_research_ran_at"] is None
 
     resp = client.get("/api/v1/locations")
@@ -40,6 +41,19 @@ def test_create_location_returns_409_for_duplicate(client):
     })
     assert dup.status_code == 409
     assert "already exists" in dup.json()["detail"]
+
+
+def test_create_location_normalizes_country_aliases(client):
+    resp = client.post("/api/v1/locations", json={
+        "name": "Santa Barbara",
+        "country": "USA",
+        "latitude": 34.4208,
+        "longitude": -119.6982,
+    })
+
+    assert resp.status_code == 201
+    assert resp.json()["country"] == "United States"
+    assert resp.json()["country_code"] == "US"
 
 
 def test_update_location_full_research_timestamp(client):
@@ -132,6 +146,25 @@ def test_location_candidates_endpoint(client, monkeypatch):
 
     assert resp.status_code == 200
     assert resp.json()["candidates"][0]["display_name"].startswith("San Andrés")
+
+
+def test_create_and_search_visa_normalizes_country_aliases(client):
+    resp = client.post("/api/v1/visa", json={
+        "country": "USA",
+        "visa_type": "No visa required (U.S. citizen, domestic move)",
+        "source_urls": ["https://example.com/usa-visa"],
+        "source_checked_at": "2026-03-18",
+        "verification_status": "verified",
+        "confidence": 0.9,
+    })
+
+    assert resp.status_code == 201
+    assert resp.json()["country"] == "United States"
+    assert resp.json()["country_code"] == "US"
+
+    search = client.get("/api/v1/visa?country=USA")
+    assert search.status_code == 200
+    assert any(entry["country_code"] == "US" for entry in search.json())
 
 
 def test_list_categories(client):

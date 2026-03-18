@@ -3,6 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from relocation.countries import country_matches_query, normalize_country_fields
 from relocation.database import get_db
 from relocation.models import VisaInfo
 from relocation.schemas import VisaCreate, VisaOut, VisaUpdate
@@ -30,10 +31,18 @@ def _validate_visa_evidence(info: VisaInfo) -> None:
 
 @router.get("/visa", response_model=list[VisaOut])
 def list_visa(country: Optional[str] = None, db: Session = Depends(get_db)):
-    query = db.query(VisaInfo)
-    if country:
-        query = query.filter(VisaInfo.country.ilike(f"%{country}%"))
-    return query.order_by(VisaInfo.country, VisaInfo.visa_type).all()
+    entries = db.query(VisaInfo).order_by(VisaInfo.country, VisaInfo.visa_type).all()
+    if not country:
+        return entries
+    return [
+        entry
+        for entry in entries
+        if country_matches_query(
+            country=entry.country,
+            country_code=entry.country_code,
+            query=country,
+        )
+    ]
 
 
 @router.get("/visa/{visa_id}", response_model=VisaOut)
@@ -46,7 +55,16 @@ def get_visa(visa_id: int, db: Session = Depends(get_db)):
 
 @router.post("/visa", response_model=VisaOut, status_code=201)
 def create_visa(data: VisaCreate, db: Session = Depends(get_db)):
-    info = VisaInfo(**data.model_dump())
+    payload = data.model_dump()
+    try:
+        payload["country"], payload["country_code"] = normalize_country_fields(
+            country=payload.get("country"),
+            country_code=payload.get("country_code"),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    info = VisaInfo(**payload)
     _validate_visa_evidence(info)
     db.add(info)
     db.commit()
@@ -59,7 +77,18 @@ def update_visa(visa_id: int, data: VisaUpdate, db: Session = Depends(get_db)):
     info = db.get(VisaInfo, visa_id)
     if not info:
         raise HTTPException(404, "Visa info not found")
-    for key, val in data.model_dump(exclude_unset=True).items():
+
+    updates = data.model_dump(exclude_unset=True)
+    if "country" in updates or "country_code" in updates:
+        try:
+            updates["country"], updates["country_code"] = normalize_country_fields(
+                country=updates.get("country", info.country),
+                country_code=updates.get("country_code", info.country_code),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    for key, val in updates.items():
         setattr(info, key, val)
     _validate_visa_evidence(info)
     db.commit()

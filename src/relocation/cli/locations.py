@@ -5,6 +5,7 @@ from rich.console import Console
 from rich.table import Table
 
 from relocation.cli.helpers import resolve_location
+from relocation.countries import normalize_country_fields
 from relocation.database import SessionLocal
 from relocation.models import Location
 
@@ -41,10 +42,12 @@ def add(
     description: Optional[str] = typer.Option(None, "--desc", help="Description"),
 ):
     """Add a new location."""
+    normalized_country, normalized_country_code = normalize_country_fields(country=country)
     with SessionLocal() as session:
         loc = Location(
             name=name,
-            country=country,
+            country=normalized_country,
+            country_code=normalized_country_code,
             region=region,
             population=population,
             description=description,

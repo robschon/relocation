@@ -7,6 +7,7 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from relocation.countries import normalize_country_fields
 from relocation.database import get_db
 from relocation.models import Location
 from relocation.schemas import (
@@ -70,7 +71,16 @@ def create_location(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    loc = Location(**data.model_dump())
+    payload = data.model_dump()
+    try:
+        payload["country"], payload["country_code"] = normalize_country_fields(
+            country=payload.get("country"),
+            country_code=payload.get("country_code"),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    loc = Location(**payload)
     db.add(loc)
     try:
         db.commit()
@@ -91,7 +101,18 @@ def update_location(location_id: int, data: LocationUpdate, db: Session = Depend
     loc = db.get(Location, location_id)
     if not loc:
         raise HTTPException(404, "Location not found")
-    for key, val in data.model_dump(exclude_unset=True).items():
+
+    updates = data.model_dump(exclude_unset=True)
+    if "country" in updates or "country_code" in updates:
+        try:
+            updates["country"], updates["country_code"] = normalize_country_fields(
+                country=updates.get("country", loc.country),
+                country_code=updates.get("country_code", loc.country_code),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    for key, val in updates.items():
         setattr(loc, key, val)
     db.commit()
     db.refresh(loc)

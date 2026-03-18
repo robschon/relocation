@@ -7,6 +7,7 @@ const navGroups = [
     items: [
       { to: '/', label: 'Dashboard' },
       { to: '/compare', label: 'Compare' },
+      { to: '/map', label: 'Map' },
     ],
   },
   {
