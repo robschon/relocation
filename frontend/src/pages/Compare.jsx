@@ -10,6 +10,7 @@ export default function Compare() {
   const [users, setUsers] = useState([])
   const [selectedLocations, setSelectedLocations] = useState(new Set())
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   const [expandedCategory, setExpandedCategory] = useState(null)
 
   useEffect(() => {
@@ -20,8 +21,9 @@ export default function Compare() {
         setWeights(w)
         setUsers(u)
         setSelectedLocations(new Set(r.filter((x) => x.overall_score > 0).map((x) => x.location_name)))
-        setLoading(false)
       })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false))
   }, [])
 
   const toggleLocation = (name) => {
@@ -48,9 +50,9 @@ export default function Compare() {
     filteredRankings
       .map((r) => ({
         name: r.location_name,
-        husband: +r.husband_score.toFixed(2),
-        wife: +r.wife_score.toFixed(2),
-        diff: Math.abs(r.husband_score - r.wife_score),
+        husband: +(r.husband_score ?? 0).toFixed(2),
+        wife: +(r.wife_score ?? 0).toFixed(2),
+        diff: Math.abs((r.husband_score ?? 0) - (r.wife_score ?? 0)),
       }))
       .sort((a, b) => b.diff - a.diff),
     [filteredRankings],
@@ -61,8 +63,8 @@ export default function Compare() {
     rankings
       .map((r) => ({
         ...r,
-        diff: r.husband_score - r.wife_score,
-        absDiff: Math.abs(r.husband_score - r.wife_score),
+        diff: (r.husband_score ?? 0) - (r.wife_score ?? 0),
+        absDiff: Math.abs((r.husband_score ?? 0) - (r.wife_score ?? 0)),
       }))
       .sort((a, b) => b.absDiff - a.absDiff),
     [rankings],
@@ -79,6 +81,13 @@ export default function Compare() {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-2">Husband vs. Wife Comparison</h1>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 mb-4">
+          <p className="text-sm font-medium">Failed to load data</p>
+          <p className="text-xs mt-1">{error}</p>
+        </div>
+      )}
       <p className="text-sm text-gray-500 mb-4">Side-by-side view of how each person scores and weights locations.</p>
 
       {/* Location selector chips */}
@@ -211,9 +220,9 @@ export default function Compare() {
             {divergenceData.map((r) => (
               <tr key={r.location_name} className={`border-b ${diffRowColor(r.absDiff)}`}>
                 <td className="py-2 font-medium">{r.location_name}</td>
-                <td className="py-2 text-right font-mono">{r.husband_score.toFixed(2)}</td>
-                <td className="py-2 text-right font-mono">{r.wife_score.toFixed(2)}</td>
-                <td className="py-2 text-right font-mono font-bold">{r.absDiff.toFixed(2)}</td>
+                <td className="py-2 text-right font-mono">{(r.husband_score ?? 0).toFixed(2)}</td>
+                <td className="py-2 text-right font-mono">{(r.wife_score ?? 0).toFixed(2)}</td>
+                <td className="py-2 text-right font-mono font-bold">{(r.absDiff ?? 0).toFixed(2)}</td>
                 <td className="py-2 text-right text-xs">
                   {r.absDiff < 0.1 ? (
                     <span className="text-gray-400">Equal</span>

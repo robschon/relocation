@@ -38,9 +38,9 @@ function RankingsTable({ rankings, locationIdForRanking }) {
               )}
             </td>
             <td className="py-2 text-gray-500">{r.country}</td>
-            <td className="py-2 text-right font-mono">{r.overall_score.toFixed(2)}</td>
-            <td className="py-2 text-right font-mono">{r.husband_score.toFixed(2)}</td>
-            <td className="py-2 text-right font-mono">{r.wife_score.toFixed(2)}</td>
+            <td className="py-2 text-right font-mono">{(r.overall_score ?? 0).toFixed(2)}</td>
+            <td className="py-2 text-right font-mono">{(r.husband_score ?? 0).toFixed(2)}</td>
+            <td className="py-2 text-right font-mono">{(r.wife_score ?? 0).toFixed(2)}</td>
           </tr>
         ))}
         {rankings.length === 0 && (
@@ -68,6 +68,7 @@ export default function Dashboard() {
   const [chartType, setChartType] = useState('bar')
   const [selectedLocations, setSelectedLocations] = useState(new Set())
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     getRankings(view, { fully_scored_only: true }).then((data) => {
@@ -77,15 +78,14 @@ export default function Dashboard() {
         if (prev.size > 0) return prev
         return new Set(data.filter((r) => r.overall_score > 0).map((r) => r.location_name))
       })
-    })
+    }).catch((e) => setError(e.message))
   }, [view])
 
   useEffect(() => {
     Promise.all([getLocations({ fully_scored_only: true }), getCategories()]).then(([locs, cats]) => {
       setLocations(locs)
       setCategories(cats)
-      setLoading(false)
-    })
+    }).catch((e) => setError(e.message)).finally(() => setLoading(false))
   }, [])
 
   const toggleLocation = (name) => {
@@ -107,9 +107,9 @@ export default function Dashboard() {
 
   const barData = filteredRankings.map((r) => ({
     name: r.location_name,
-    combined: +r.overall_score.toFixed(2),
-    husband: +r.husband_score.toFixed(2),
-    wife: +r.wife_score.toFixed(2),
+    combined: +(r.overall_score ?? 0).toFixed(2),
+    husband: +(r.husband_score ?? 0).toFixed(2),
+    wife: +(r.wife_score ?? 0).toFixed(2),
   }))
 
   const radarData = categories.map((cat) => {
@@ -134,6 +134,13 @@ export default function Dashboard() {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-4">Dashboard</h1>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 mb-4">
+          <p className="text-sm font-medium">Failed to load data</p>
+          <p className="text-xs mt-1">{error}</p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <div className="bg-white rounded-lg shadow p-4">
@@ -245,7 +252,7 @@ export default function Dashboard() {
       )}
 
       {rankings.length > 0 && (() => {
-        const withDiff = rankings.map((r) => ({ ...r, diff: r.husband_score - r.wife_score }))
+        const withDiff = rankings.map((r) => ({ ...r, diff: (r.husband_score ?? 0) - (r.wife_score ?? 0) }))
         const husbandHigher = [...withDiff].sort((a, b) => b.diff - a.diff).slice(0, 3).filter((r) => r.diff > 0)
         const wifeHigher = [...withDiff].sort((a, b) => a.diff - b.diff).slice(0, 3).filter((r) => r.diff < 0)
         const divergent = [...husbandHigher, ...wifeHigher]
@@ -255,8 +262,8 @@ export default function Dashboard() {
           <tr className="border-b hover:bg-gray-50">
             <td className="py-2 font-medium">{r.location_name}</td>
             <td className="py-2 text-gray-500">{r.country}</td>
-            <td className="py-2 text-right font-mono">{r.husband_score.toFixed(2)}</td>
-            <td className="py-2 text-right font-mono">{r.wife_score.toFixed(2)}</td>
+            <td className="py-2 text-right font-mono">{(r.husband_score ?? 0).toFixed(2)}</td>
+            <td className="py-2 text-right font-mono">{(r.wife_score ?? 0).toFixed(2)}</td>
             <td className={`py-2 text-right font-mono font-bold ${r.diff > 0 ? 'text-green-600' : 'text-amber-600'}`}>
               {r.diff > 0 ? '+' : ''}{r.diff.toFixed(2)}
             </td>

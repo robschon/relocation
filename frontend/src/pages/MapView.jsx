@@ -25,6 +25,7 @@ export default function MapView() {
   const [view, setView] = useState('combined')
   const [topCount, setTopCount] = useState('all')
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     Promise.all([
@@ -33,8 +34,7 @@ export default function MapView() {
     ]).then(([locs, ranks]) => {
       setLocations(locs)
       setRankings(ranks)
-      setLoading(false)
-    })
+    }).catch((e) => setError(e.message)).finally(() => setLoading(false))
   }, [])
 
   // Build ranking lookup by name::country key
@@ -77,6 +77,16 @@ export default function MapView() {
   const maxScore = scoredValues.length > 0 ? Math.max(...scoredValues) : 10
 
   if (loading) return <Spinner label="Loading map..." />
+
+  if (error) return (
+    <div>
+      <h1 className="text-2xl font-bold mb-4">Map</h1>
+      <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4">
+        <p className="text-sm font-medium">Failed to load data</p>
+        <p className="text-xs mt-1">{error}</p>
+      </div>
+    </div>
+  )
 
   return (
     <div>
@@ -143,9 +153,9 @@ export default function MapView() {
                     <div className="text-gray-500">{m.country}</div>
                     {m.ranking ? (
                       <div className="mt-1 space-y-0.5">
-                        <div>Combined: <span className="font-mono">{m.ranking.overall_score.toFixed(2)}</span></div>
-                        <div>Husband: <span className="font-mono">{m.ranking.husband_score.toFixed(2)}</span></div>
-                        <div>Wife: <span className="font-mono">{m.ranking.wife_score.toFixed(2)}</span></div>
+                        <div>Combined: <span className="font-mono">{(m.ranking.overall_score ?? 0).toFixed(2)}</span></div>
+                        <div>Husband: <span className="font-mono">{(m.ranking.husband_score ?? 0).toFixed(2)}</span></div>
+                        <div>Wife: <span className="font-mono">{(m.ranking.wife_score ?? 0).toFixed(2)}</span></div>
                       </div>
                     ) : null}
                   </div>

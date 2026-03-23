@@ -11,18 +11,24 @@ export default function ProsCons() {
   const [categories, setCategories] = useState([])
   const [newItems, setNewItems] = useState({})
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   const load = async () => {
-    const [locs, pc, cats, rankings] = await Promise.all([
-      getLocations({ fully_scored_only: true }),
-      getProsCons(),
-      getCategories(),
-      getRankings('combined', { fully_scored_only: true }),
-    ])
-    setLocations(sortLocationsByOverallRank(locs, rankings))
-    setProsCons(pc)
-    setCategories(cats)
-    setLoading(false)
+    try {
+      const [locs, pc, cats, rankings] = await Promise.all([
+        getLocations({ fully_scored_only: true }),
+        getProsCons(),
+        getCategories(),
+        getRankings('combined', { fully_scored_only: true }),
+      ])
+      setLocations(sortLocationsByOverallRank(locs, rankings))
+      setProsCons(pc)
+      setCategories(cats)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { load() }, [])
@@ -33,26 +39,44 @@ export default function ProsCons() {
   const handleAdd = async (locId, e) => {
     e.preventDefault()
     const form = getFormState(locId)
-    await createProCon({
-      location_id: locId,
-      type: form.type,
-      content: form.content,
-      category_id: form.category_id ? Number(form.category_id) : null,
-    })
-    toast.success(`${form.type === 'pro' ? 'Pro' : 'Con'} added`)
-    setFormState(locId, { type: 'pro', content: '', category_id: '' })
-    load()
+    try {
+      await createProCon({
+        location_id: locId,
+        type: form.type,
+        content: form.content,
+        category_id: form.category_id ? Number(form.category_id) : null,
+      })
+      toast.success(`${form.type === 'pro' ? 'Pro' : 'Con'} added`)
+      setFormState(locId, { type: 'pro', content: '', category_id: '' })
+      load()
+    } catch (e) {
+      toast.error(`Failed to add item: ${e.message}`)
+    }
   }
 
   const handleDelete = async (id) => {
-    await deleteProCon(id)
-    toast.success('Item removed')
-    load()
+    try {
+      await deleteProCon(id)
+      toast.success('Item removed')
+      load()
+    } catch (e) {
+      toast.error(`Failed to remove item: ${e.message}`)
+    }
   }
 
   const catName = (id) => categories.find((c) => c.id === id)?.name || ''
 
   if (loading) return <Spinner label="Loading pros & cons..." />
+
+  if (error) return (
+    <div>
+      <h1 className="text-2xl font-bold mb-4">Pros & Cons</h1>
+      <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4">
+        <p className="text-sm font-medium">Failed to load data</p>
+        <p className="text-xs mt-1">{error}</p>
+      </div>
+    </div>
+  )
 
   return (
     <div>
