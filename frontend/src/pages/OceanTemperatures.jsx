@@ -24,7 +24,7 @@ export default function OceanTemperatures() {
   useEffect(() => {
     let cancelled = false
     const loadLocations = async () => {
-      const locs = await getLocations()
+      const locs = await getLocations({ fully_scored_only: true })
       if (cancelled) return
       setLocations(locs)
       if (locs.length > 0) {

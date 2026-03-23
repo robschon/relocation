@@ -7,6 +7,31 @@ def test_list_locations(client):
     assert "Lima" in names
 
 
+def test_list_locations_fully_scored_only(client):
+    locs = client.get("/api/v1/locations").json()
+    cats = client.get("/api/v1/categories").json()
+    lima_id = next(loc["id"] for loc in locs if loc["name"] == "Lima")
+    fremantle_id = next(loc["id"] for loc in locs if loc["name"] == "Fremantle")
+
+    for cat in cats:
+        client.post("/api/v1/scores", json={
+            "location_id": lima_id,
+            "category_id": cat["id"],
+            "score": 8,
+        })
+
+    client.post("/api/v1/scores", json={
+        "location_id": fremantle_id,
+        "category_id": cats[0]["id"],
+        "score": 6,
+    })
+
+    resp = client.get("/api/v1/locations?fully_scored_only=true")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert [loc["name"] for loc in data] == ["Lima"]
+
+
 def test_create_location(client):
     resp = client.post("/api/v1/locations", json={
         "name": "Lisbon",
@@ -241,6 +266,32 @@ def test_rankings(client):
     scored = [r for r in data if r["overall_score"] > 0]
     assert len(scored) == 2
     assert scored[0]["overall_score"] >= scored[1]["overall_score"]
+
+
+def test_rankings_fully_scored_only(client):
+    locs = client.get("/api/v1/locations").json()
+    cats = client.get("/api/v1/categories").json()
+    lima_id = next(loc["id"] for loc in locs if loc["name"] == "Lima")
+    fremantle_id = next(loc["id"] for loc in locs if loc["name"] == "Fremantle")
+
+    for cat in cats:
+        client.post("/api/v1/scores", json={
+            "location_id": lima_id,
+            "category_id": cat["id"],
+            "score": 7,
+        })
+
+    client.post("/api/v1/scores", json={
+        "location_id": fremantle_id,
+        "category_id": cats[0]["id"],
+        "score": 9,
+    })
+
+    resp = client.get("/api/v1/rankings?fully_scored_only=true")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert [row["location_name"] for row in data] == ["Lima"]
+    assert len(data[0]["details"]) == len(cats)
 
 
 def test_users(client):

@@ -13,7 +13,12 @@ export default function ProsCons() {
   const [loading, setLoading] = useState(true)
 
   const load = async () => {
-    const [locs, pc, cats, rankings] = await Promise.all([getLocations(), getProsCons(), getCategories(), getRankings('combined')])
+    const [locs, pc, cats, rankings] = await Promise.all([
+      getLocations({ fully_scored_only: true }),
+      getProsCons(),
+      getCategories(),
+      getRankings('combined', { fully_scored_only: true }),
+    ])
     setLocations(sortLocationsByOverallRank(locs, rankings))
     setProsCons(pc)
     setCategories(cats)

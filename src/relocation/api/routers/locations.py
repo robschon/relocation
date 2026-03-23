@@ -18,6 +18,7 @@ from relocation.schemas import (
 )
 from relocation.services.location_candidates import search_location_candidates
 from relocation.services.new_location_enrichment import run_location_post_create_pipeline
+from relocation.services.scoring import get_fully_scored_location_ids
 
 router = APIRouter(tags=["locations"])
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
@@ -45,8 +46,17 @@ def _find_research_doc_path(location: Location) -> Path | None:
 
 
 @router.get("/locations", response_model=list[LocationOut])
-def list_locations(db: Session = Depends(get_db)):
-    return db.query(Location).order_by(Location.name).all()
+def list_locations(
+    fully_scored_only: bool = False,
+    db: Session = Depends(get_db),
+):
+    query = db.query(Location)
+    if fully_scored_only:
+        fully_scored_location_ids = get_fully_scored_location_ids(db)
+        if not fully_scored_location_ids:
+            return []
+        query = query.filter(Location.id.in_(fully_scored_location_ids))
+    return query.order_by(Location.name).all()
 
 
 @router.get("/location-candidates", response_model=LocationCandidateSearchOut)

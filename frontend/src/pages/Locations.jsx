@@ -171,7 +171,10 @@ export default function Locations() {
   }
 
   const load = async () => {
-    const [locs, rankings] = await Promise.all([getLocations(), getRankings('combined')])
+    const [locs, rankings] = await Promise.all([
+      getLocations({ fully_scored_only: false }),
+      getRankings('combined', { fully_scored_only: false }),
+    ])
     const sorted = sortLocationsByOverallRank(locs, rankings)
     setLocations(
       sorted.map((loc) => {

@@ -11,7 +11,11 @@ router = APIRouter(tags=["rankings"])
 
 
 @router.get("/rankings", response_model=list[RankingOut])
-def get_rankings(user: Optional[str] = None, db: Session = Depends(get_db)):
+def get_rankings(
+    user: Optional[str] = None,
+    fully_scored_only: bool = False,
+    db: Session = Depends(get_db),
+):
     """
     Get weighted rankings for all locations.
 
@@ -20,7 +24,7 @@ def get_rankings(user: Optional[str] = None, db: Session = Depends(get_db)):
     """
     if user == "combined":
         user = None
-    rankings = compute_rankings(db, user=user)
+    rankings = compute_rankings(db, user=user, fully_scored_only=fully_scored_only)
     return [
         RankingOut(
             location_name=r.location_name,

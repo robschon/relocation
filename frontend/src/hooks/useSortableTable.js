@@ -23,8 +23,9 @@ export default function useSortableTable(data, defaultSortKey = null, defaultDir
       let aVal = typeof sortKey === 'function' ? sortKey(a) : a[sortKey]
       let bVal = typeof sortKey === 'function' ? sortKey(b) : b[sortKey]
 
-      if (aVal == null) aVal = ''
-      if (bVal == null) bVal = ''
+      if (aVal == null && bVal == null) return 0
+      if (aVal == null) return 1
+      if (bVal == null) return -1
 
       let cmp
       if (typeof aVal === 'number' && typeof bVal === 'number') {

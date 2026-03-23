@@ -16,7 +16,10 @@ async function request(url, options = {}) {
 }
 
 // Locations
-export const getLocations = () => request(`${BASE}/locations`)
+export const getLocations = (params = {}) => {
+  const qs = new URLSearchParams(params).toString()
+  return request(`${BASE}/locations${qs ? '?' + qs : ''}`)
+}
 export const getLocation = (id) => request(`${BASE}/locations/${id}`)
 export const getLocationCandidates = (params = {}) => {
   const qs = new URLSearchParams(params).toString()
@@ -100,4 +103,7 @@ export const exportProfile = () => request(`${BASE}/profile/export`)
 export const getUsers = () => request(`${BASE}/users`)
 
 // Rankings
-export const getRankings = (user = 'combined') => request(`${BASE}/rankings?user=${user}`)
+export const getRankings = (user = 'combined', params = {}) => {
+  const qs = new URLSearchParams({ user, ...params }).toString()
+  return request(`${BASE}/rankings?${qs}`)
+}

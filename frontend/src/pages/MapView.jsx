@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -23,17 +23,19 @@ export default function MapView() {
   const [locations, setLocations] = useState([])
   const [rankings, setRankings] = useState([])
   const [view, setView] = useState('combined')
+  const [topCount, setTopCount] = useState('all')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([getLocations(), getRankings('combined')]).then(([locs, ranks]) => {
+    Promise.all([
+      getLocations({ fully_scored_only: true }),
+      getRankings('combined', { fully_scored_only: true }),
+    ]).then(([locs, ranks]) => {
       setLocations(locs)
       setRankings(ranks)
       setLoading(false)
     })
   }, [])
-
-  if (loading) return <Spinner label="Loading map..." />
 
   // Build ranking lookup by name::country key
   const rankingByKey = Object.fromEntries(
@@ -51,30 +53,60 @@ export default function MapView() {
       const ranking = rankingByKey[key]
       return { ...loc, ranking }
     })
+    .filter((marker) => marker.ranking)
 
   const scoreField = SCORE_FIELDS[view]
 
+  const rankedMarkers = useMemo(
+    () => [...markers].sort((a, b) => (b.ranking?.[scoreField] ?? 0) - (a.ranking?.[scoreField] ?? 0)),
+    [markers, scoreField],
+  )
+
+  const displayedMarkers = useMemo(() => {
+    if (topCount === 'all') return rankedMarkers
+    const limit = Number(topCount)
+    if (!Number.isFinite(limit) || limit <= 0) return rankedMarkers
+    return rankedMarkers.slice(0, limit)
+  }, [rankedMarkers, topCount])
+
   // Compute actual score range for the current view
-  const scoredValues = markers
+  const scoredValues = displayedMarkers
     .map((m) => m.ranking?.[scoreField])
     .filter((s) => s != null && s > 0)
   const minScore = scoredValues.length > 0 ? Math.min(...scoredValues) : 0
   const maxScore = scoredValues.length > 0 ? Math.max(...scoredValues) : 10
 
+  if (loading) return <Spinner label="Loading map..." />
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold">Map</h1>
-        <div className="flex gap-2">
-          {['combined', 'husband', 'wife'].map((v) => (
-            <button
-              key={v}
-              onClick={() => setView(v)}
-              className={`px-3 py-1 text-sm rounded ${view === v ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
-            >
-              {v.charAt(0).toUpperCase() + v.slice(1)}
-            </button>
-          ))}
+        <div className="flex items-center gap-3">
+          <label className="text-sm text-gray-600" htmlFor="map-top-count">Show</label>
+          <select
+            id="map-top-count"
+            value={topCount}
+            onChange={(e) => setTopCount(e.target.value)}
+            className="border rounded px-3 py-1 text-sm bg-white"
+          >
+            <option value="all">All results</option>
+            <option value="5">Top 5</option>
+            <option value="10">Top 10</option>
+            <option value="25">Top 25</option>
+            <option value="50">Top 50</option>
+          </select>
+          <div className="flex gap-2">
+            {['combined', 'husband', 'wife'].map((v) => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                className={`px-3 py-1 text-sm rounded ${view === v ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+              >
+                {v.charAt(0).toUpperCase() + v.slice(1)}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -89,18 +121,17 @@ export default function MapView() {
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          {markers.map((m) => {
+          {displayedMarkers.map((m) => {
             const score = m.ranking?.[scoreField]
-            const hasScore = score != null && score > 0
             return (
               <CircleMarker
                 key={m.id}
                 center={[m.latitude, m.longitude]}
-                radius={hasScore ? scoreRadius(score, minScore, maxScore) : 5}
+                radius={scoreRadius(score, minScore, maxScore)}
                 pathOptions={{
-                  fillColor: hasScore ? scoreToColor(score, minScore, maxScore) : '#9ca3af',
-                  color: hasScore ? scoreToColor(score, minScore, maxScore) : '#9ca3af',
-                  fillOpacity: hasScore ? 0.8 : 0.4,
+                  fillColor: scoreToColor(score, minScore, maxScore),
+                  color: scoreToColor(score, minScore, maxScore),
+                  fillOpacity: 0.8,
                   weight: 1,
                 }}
               >
@@ -116,9 +147,7 @@ export default function MapView() {
                         <div>Husband: <span className="font-mono">{m.ranking.husband_score.toFixed(2)}</span></div>
                         <div>Wife: <span className="font-mono">{m.ranking.wife_score.toFixed(2)}</span></div>
                       </div>
-                    ) : (
-                      <div className="mt-1 text-gray-400 italic">No scores yet</div>
-                    )}
+                    ) : null}
                   </div>
                 </Popup>
               </CircleMarker>
@@ -129,6 +158,7 @@ export default function MapView() {
 
       {/* Score legend */}
       <div className="flex items-center gap-2 mt-3 text-xs text-gray-500">
+        <span>{displayedMarkers.length} shown</span>
         <span>{scoredValues.length > 0 ? minScore.toFixed(1) : 'Low'}</span>
         <div
           className="h-3 w-32 rounded"
@@ -137,8 +167,6 @@ export default function MapView() {
           }}
         />
         <span>{scoredValues.length > 0 ? maxScore.toFixed(1) : 'High'}</span>
-        <span className="ml-4 inline-block w-3 h-3 rounded-full bg-gray-400 opacity-40" />
-        <span>Unscored</span>
       </div>
     </div>
   )

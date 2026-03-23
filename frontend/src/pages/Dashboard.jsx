@@ -70,7 +70,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    getRankings(view).then((data) => {
+    getRankings(view, { fully_scored_only: true }).then((data) => {
       setRankings(data)
       // Initialize selection: all locations with a non-zero score
       setSelectedLocations((prev) => {
@@ -81,7 +81,7 @@ export default function Dashboard() {
   }, [view])
 
   useEffect(() => {
-    Promise.all([getLocations(), getCategories()]).then(([locs, cats]) => {
+    Promise.all([getLocations({ fully_scored_only: true }), getCategories()]).then(([locs, cats]) => {
       setLocations(locs)
       setCategories(cats)
       setLoading(false)

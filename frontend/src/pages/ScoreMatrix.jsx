@@ -24,20 +24,52 @@ export default function ScoreMatrix() {
   const [editValue, setEditValue] = useState('')
   const [loading, setLoading] = useState(true)
 
-  const load = async () => {
-    const [locs, cats, sc, rankings] = await Promise.all([getLocations(), getCategories(), getScores(), getRankings('combined')])
+  const fetchMatrixData = async () => {
+    const [locs, cats, sc, rankings] = await Promise.all([
+      getLocations({ fully_scored_only: true }),
+      getCategories(),
+      getScores(),
+      getRankings('combined', { fully_scored_only: true }),
+    ])
+    return { locs, cats, sc, rankings }
+  }
+
+  const applyMatrixData = ({ locs, cats, sc, rankings }) => {
     setLocations(sortLocationsByOverallRank(locs, rankings))
     setCategories(cats)
     setScores(sc)
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    let cancelled = false
+
+    const loadInitialData = async () => {
+      const data = await fetchMatrixData()
+      if (!cancelled) {
+        applyMatrixData(data)
+      }
+    }
+
+    void loadInitialData()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const uniqueCountries = useMemo(
     () => Array.from(new Set(locations.map((loc) => loc.country).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
     [locations],
   )
+
+  const scoreMap = useMemo(() => {
+    const map = new Map()
+    scores.forEach((scoreEntry) => {
+      map.set(`${scoreEntry.location_id}-${scoreEntry.category_id}`, scoreEntry.score)
+    })
+    return map
+  }, [scores])
 
   const filteredLocations = useMemo(() => {
     if (!countryFilter) return locations
@@ -45,12 +77,22 @@ export default function ScoreMatrix() {
     return locations.filter((loc) => loc.country?.trim().toLowerCase() === normalizedFilter)
   }, [locations, countryFilter])
 
-  const { sortKey, sortDirection, toggleSort, sortedData: sortedLocations } = useSortableTable(filteredLocations)
-  const displayLocations = sortKey ? sortedLocations : filteredLocations
+  const sortableLocations = useMemo(
+    () => filteredLocations.map((loc) => {
+      const sortableLocation = { ...loc }
+      categories.forEach((cat) => {
+        sortableLocation[`_score_${cat.id}`] = scoreMap.get(`${loc.id}-${cat.id}`) ?? null
+      })
+      return sortableLocation
+    }),
+    [filteredLocations, categories, scoreMap],
+  )
+
+  const { sortKey, sortDirection, toggleSort, sortedData: sortedLocations } = useSortableTable(sortableLocations)
+  const displayLocations = sortKey ? sortedLocations : sortableLocations
 
   const getScore = (locId, catId) => {
-    const s = scores.find((s) => s.location_id === locId && s.category_id === catId)
-    return s ? s.score : null
+    return scoreMap.get(`${locId}-${catId}`) ?? null
   }
 
   const handleEdit = (locId, catId) => {
@@ -64,7 +106,7 @@ export default function ScoreMatrix() {
     if (val >= 0 && val <= 10) {
       await upsertScore({ location_id: locId, category_id: catId, score: val })
       toast.success('Score saved')
-      await load()
+      applyMatrixData(await fetchMatrixData())
     }
     setEditingCell(null)
   }
@@ -103,9 +145,15 @@ export default function ScoreMatrix() {
             <tr className="border-b bg-gray-50">
               <SortHeader label="Location" sortKey="name" currentSortKey={sortKey} sortDirection={sortDirection} onToggle={toggleSort} className="py-2 px-3 text-left font-medium text-gray-600 sticky left-0 bg-gray-50" />
               {categories.map((cat) => (
-                <th key={cat.id} className="py-2 px-3 text-center font-medium text-gray-600 min-w-[80px]">
-                  <span className="text-xs">{cat.name}</span>
-                </th>
+                <SortHeader
+                  key={cat.id}
+                  label={cat.name}
+                  sortKey={`_score_${cat.id}`}
+                  currentSortKey={sortKey}
+                  sortDirection={sortDirection}
+                  onToggle={toggleSort}
+                  className="py-2 px-3 text-center font-medium text-gray-600 min-w-[80px]"
+                />
               ))}
             </tr>
           </thead>

@@ -74,3 +74,20 @@ def test_ranking_combined(db_session):
     assert lima.husband_score == 8.0
     assert lima.wife_score == 8.0
     assert lima.overall_score == 8.0
+
+
+def test_ranking_fully_scored_only(db_session):
+    lima = db_session.query(Location).filter_by(name="Lima").one()
+    fremantle = db_session.query(Location).filter_by(name="Fremantle").one()
+    categories = db_session.query(Category).order_by(Category.sort_order).all()
+
+    for category in categories:
+        db_session.add(Score(location_id=lima.id, category_id=category.id, score=8))
+
+    db_session.add(Score(location_id=fremantle.id, category_id=categories[0].id, score=6))
+    db_session.commit()
+
+    rankings = compute_rankings(db_session, fully_scored_only=True)
+
+    assert [ranking.location_name for ranking in rankings] == ["Lima"]
+    assert len(rankings[0].details) == len(categories)

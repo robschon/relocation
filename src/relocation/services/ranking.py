@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from relocation.models import Category, Location, Score, User, Weight
+from relocation.services.scoring import get_fully_scored_location_ids
 
 DEFAULT_WEIGHT = 5.0
 
@@ -27,7 +28,11 @@ class LocationRanking:
     details: list[CategoryDetail]
 
 
-def compute_rankings(session: Session, user: str | None = None) -> list[LocationRanking]:
+def compute_rankings(
+    session: Session,
+    user: str | None = None,
+    fully_scored_only: bool = False,
+) -> list[LocationRanking]:
     """
     Compute weighted rankings for all locations.
 
@@ -37,6 +42,7 @@ def compute_rankings(session: Session, user: str | None = None) -> list[Location
     locations = session.query(Location).all()
     categories = session.query(Category).order_by(Category.sort_order).all()
     users = {u.name: u for u in session.query(User).all()}
+    fully_scored_location_ids = get_fully_scored_location_ids(session) if fully_scored_only else None
 
     # Build weight lookup: {(user_id, category_id): weight}
     weight_map: dict[tuple[int, int], float] = {}
@@ -53,6 +59,9 @@ def compute_rankings(session: Session, user: str | None = None) -> list[Location
 
     rankings = []
     for loc in locations:
+        if fully_scored_location_ids is not None and loc.id not in fully_scored_location_ids:
+            continue
+
         details = []
         h_weighted_sum = 0.0
         h_weight_sum = 0.0

@@ -13,7 +13,7 @@ export default function Compare() {
   const [expandedCategory, setExpandedCategory] = useState(null)
 
   useEffect(() => {
-    Promise.all([getRankings('combined'), getCategories(), getWeights(), getUsers()])
+    Promise.all([getRankings('combined', { fully_scored_only: true }), getCategories(), getWeights(), getUsers()])
       .then(([r, c, w, u]) => {
         setRankings(r)
         setCategories(c)

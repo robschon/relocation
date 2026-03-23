@@ -63,7 +63,7 @@ export default function Research() {
   const hydratePage = async (params, { cancelRef } = {}) => {
     const [researchRes, locationsRes, categoriesRes] = await Promise.allSettled([
       getResearch(params),
-      getLocations(),
+      getLocations({ fully_scored_only: true }),
       getCategories(),
     ])
 
@@ -72,18 +72,24 @@ export default function Research() {
     let errorMessage = ''
     const hasResearch = researchRes.status === 'fulfilled'
 
+    const locationsValue = locationsRes.status === 'fulfilled' ? locationsRes.value : []
+    const allowedLocationIds = new Set(locationsValue.map((location) => location.id))
+
     if (hasResearch) {
       const normalized = researchRes.value.map((entry) => ({
         ...entry,
         source_urls: normalizeSourceUrls(entry.source_urls),
       }))
-      setResearch(normalized)
+      setResearch(
+        locationsRes.status === 'fulfilled'
+          ? normalized.filter((entry) => allowedLocationIds.has(entry.location_id))
+          : normalized,
+      )
     } else {
       setResearch([])
       errorMessage = researchRes.reason?.message || 'Failed to load research.'
     }
 
-    const locationsValue = locationsRes.status === 'fulfilled' ? locationsRes.value : []
     const categoriesValue = categoriesRes.status === 'fulfilled' ? categoriesRes.value : []
 
     if (locationsRes.status === 'fulfilled') {
