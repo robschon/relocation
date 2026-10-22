@@ -26,6 +26,13 @@ const navGroups = [
     ],
   },
   {
+    section: 'Analysis',
+    items: [
+      { to: '/sensitivity', label: 'Sensitivity' },
+      { to: '/distribution', label: 'Score Distribution' },
+    ],
+  },
+  {
     section: 'Details',
     items: [
       { to: '/pros-cons', label: 'Pros & Cons' },

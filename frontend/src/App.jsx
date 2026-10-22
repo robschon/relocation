@@ -14,6 +14,8 @@ import Profile from './pages/Profile'
 import OceanTemperatures from './pages/OceanTemperatures'
 import Compare from './pages/Compare'
 import MapView from './pages/MapView'
+import SensitivityAnalysis from './pages/SensitivityAnalysis'
+import ScoreDistribution from './pages/ScoreDistribution'
 
 export default function App() {
   return (
@@ -34,6 +36,8 @@ export default function App() {
           <Route path="/visa" element={<Visa />} />
           <Route path="/ocean-temperatures" element={<OceanTemperatures />} />
           <Route path="/profile" element={<Profile />} />
+          <Route path="/sensitivity" element={<SensitivityAnalysis />} />
+          <Route path="/distribution" element={<ScoreDistribution />} />
         </Route>
       </Routes>
     </>
