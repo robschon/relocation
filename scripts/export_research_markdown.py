@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sqlite3
 from datetime import date, datetime
@@ -12,10 +13,6 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = PROJECT_ROOT / "data" / "relocation.db"
 OUT_DIR = PROJECT_ROOT / "research"
-STRICT_FRESHNESS_WINDOWS = {
-    "Visa / residency feasibility": 30,
-    "Tax implications": 45,
-}
 
 
 def slugify(value: str) -> str:
@@ -27,7 +24,7 @@ def slugify(value: str) -> str:
 
 def _freshness_label(
     *,
-    category_name: str,
+    window_days: int | None,
     verification_status: str | None,
     source_checked_at: str | None,
     today: date,
@@ -38,7 +35,6 @@ def _freshness_label(
     if not source_checked_at:
         return "unverified"
 
-    window_days = STRICT_FRESHNESS_WINDOWS.get(category_name)
     if not window_days:
         return verification_status or "needs_review"
 
@@ -67,19 +63,22 @@ def build_markdown(conn: sqlite3.Connection, location_name: str) -> tuple[Path, 
     rows = cur.execute(
         """
         WITH latest_research AS (
-            SELECT r1.*
-            FROM research r1
-            JOIN (
-                SELECT category_id, MAX(id) AS max_id
-                FROM research
-                WHERE location_id = ?
-                GROUP BY category_id
-            ) x ON x.max_id = r1.id
+            SELECT r.*
+            FROM research r
+            JOIN categories rc ON rc.id = r.category_id
+            WHERE r.provider = 'openai' AND r.is_current = 1
+              AND (
+                (rc.scope = 'location' AND r.location_id = ?)
+                OR (rc.scope = 'country' AND r.location_id IS NULL
+                    AND r.country_code = (SELECT country_code FROM locations WHERE id = ?))
+              )
         )
         SELECT
             c.sort_order,
             c.name AS category_name,
+            CASE WHEN c.requires_citation = 1 THEN c.refresh_after_days END AS freshness_window_days,
             lr.content,
+            lr.key_facts,
             lr.source,
             lr.source_checked_at,
             lr.verification_status,
@@ -88,9 +87,9 @@ def build_markdown(conn: sqlite3.Connection, location_name: str) -> tuple[Path, 
             s.notes AS score_notes
         FROM categories c
         LEFT JOIN latest_research lr
-            ON lr.category_id = c.id AND lr.location_id = ?
-        LEFT JOIN scores s
-            ON s.category_id = c.id AND s.location_id = ?
+            ON lr.category_id = c.id
+        LEFT JOIN effective_scores s
+            ON s.category_id = c.id AND s.location_id = ? AND s.provider = 'openai'
         ORDER BY c.sort_order ASC
         """,
         (location["id"], location["id"], location["id"]),
@@ -121,7 +120,7 @@ def build_markdown(conn: sqlite3.Connection, location_name: str) -> tuple[Path, 
         key = f"{content[:110]}..." if len(content) > 113 else content
         score = f"{row['score']}/10" if row["score"] is not None else "N/A"
         freshness = _freshness_label(
-            category_name=row["category_name"],
+            window_days=row["freshness_window_days"],
             verification_status=row["verification_status"],
             source_checked_at=row["source_checked_at"],
             today=today,
@@ -136,13 +135,21 @@ def build_markdown(conn: sqlite3.Connection, location_name: str) -> tuple[Path, 
         lines.append(f"## {idx}. {row['category_name']}")
         lines.append("")
         lines.append(row["content"] or "No research content available.")
+        facts = json.loads(row["key_facts"]) if row["key_facts"] else []
+        if facts:
+            lines.append("")
+            lines.append("**Key facts:**")
+            for fact in facts:
+                value = f": {fact['value']}" if fact.get("value") else ""
+                link = f" ([source]({fact['source_url']}))" if fact.get("source_url") else ""
+                lines.append(f"- {fact.get('fact', '')}{value}{link}")
         lines.append("")
         score_line = f"**Score:** {row['score']}/10" if row["score"] is not None else "**Score:** N/A"
         lines.append(score_line)
         lines.append(f"**Score notes:** {(row['score_notes'] or 'No score notes available.').strip()}")
         lines.append(f"**Source:** {(row['source'] or 'No source noted.').strip()}")
         freshness = _freshness_label(
-            category_name=row["category_name"],
+            window_days=row["freshness_window_days"],
             verification_status=row["verification_status"],
             source_checked_at=row["source_checked_at"],
             today=today,

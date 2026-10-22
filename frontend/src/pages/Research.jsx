@@ -82,7 +82,7 @@ export default function Research() {
       }))
       setResearch(
         locationsRes.status === 'fulfilled'
-          ? normalized.filter((entry) => allowedLocationIds.has(entry.location_id))
+          ? normalized.filter((entry) => entry.location_id == null || allowedLocationIds.has(entry.location_id))
           : normalized,
       )
     } else {
@@ -256,6 +256,11 @@ export default function Research() {
   }
 
   const locName = (id) => locations.find((location) => location.id === id)?.name || `#${id}`
+  // Country-level research (e.g. visa/residency) has no location_id, only a country_code.
+  const subjectName = (entry) =>
+    entry.location_id == null
+      ? `${locations.find((location) => location.country_code === entry.country_code)?.country || entry.country_code} (country)`
+      : locName(entry.location_id)
   const catName = (id) => categories.find((category) => category.id === id)?.name || ''
 
   return (
@@ -399,7 +404,7 @@ export default function Research() {
             <div key={entry.id} className="bg-white rounded-lg shadow p-4">
               <div className="flex items-start justify-between">
                 <div className="flex gap-2 mb-2">
-                  <span className="bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded">{locName(entry.location_id)}</span>
+                  <span className="bg-blue-100 text-blue-800 text-xs px-2 py-0.5 rounded">{subjectName(entry)}</span>
                   {entry.category_id && <span className="bg-purple-100 text-purple-800 text-xs px-2 py-0.5 rounded">{catName(entry.category_id)}</span>}
                 </div>
                 <button onClick={() => handleDelete(entry.id)} className="text-red-400 hover:text-red-600 text-sm">Delete</button>

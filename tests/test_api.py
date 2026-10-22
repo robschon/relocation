@@ -316,111 +316,372 @@ def test_pros_cons(client):
     assert resp.json()[0]["type"] == "pro"
 
 
-def test_start_full_research_uses_location_id(client, monkeypatch):
-    from pathlib import Path
+class _DummyThread:
+    calls: dict[str, object] = {}
+
+    def __init__(self, *, target, args, daemon):
+        _DummyThread.calls.update(target=target, args=args, daemon=daemon)
+
+    def start(self):
+        _DummyThread.calls["started"] = True
+
+
+def _patch_job_launch(monkeypatch):
 
     from relocation.api.routers import full_research
 
-    full_research._jobs.clear()
+    _DummyThread.calls = {}
+    monkeypatch.setattr(full_research.threading, "Thread", _DummyThread)
+    return _DummyThread.calls
+
+
+def test_start_full_research_creates_queued_run(client, db_session, monkeypatch):
+    from relocation.models import ResearchRun
+
+    calls = _patch_job_launch(monkeypatch)
     loc_id = client.get("/api/v1/locations").json()[0]["id"]
-    calls: dict[str, object] = {}
-
-    class DummyThread:
-        def __init__(self, *, target, args, daemon):
-            calls["target"] = target
-            calls["args"] = args
-            calls["daemon"] = daemon
-
-        def start(self):
-            calls["started"] = True
-
-    monkeypatch.setattr(full_research, "FULL_RESEARCH_SCRIPT", Path(__file__))
-    monkeypatch.setattr(full_research.threading, "Thread", DummyThread)
 
     resp = client.post(f"/api/v1/locations/{loc_id}/full-research")
 
     assert resp.status_code == 202
-    assert resp.json()["location_id"] == loc_id
-    assert calls["args"][1] == loc_id
-    assert calls["args"][2] is False
+    body = resp.json()
+    assert body["location_id"] == loc_id
+    assert body["status"] == "queued"
+    run = db_session.get(ResearchRun, int(body["id"]))
+    assert (run.kind, run.status, run.provider, run.prompt_version) == ("full", "queued", "openai", "v1")
+    assert calls["args"] == (run.id, loc_id, False)
     assert calls["started"] is True
 
 
-def test_start_full_research_can_force_refresh(client, monkeypatch):
-    from pathlib import Path
-
-    from relocation.api.routers import full_research
-
-    full_research._jobs.clear()
+def test_start_full_research_rejects_duplicate_active_job(client, monkeypatch):
+    _patch_job_launch(monkeypatch)
     loc_id = client.get("/api/v1/locations").json()[0]["id"]
-    calls: dict[str, object] = {}
 
-    class DummyThread:
-        def __init__(self, *, target, args, daemon):
-            calls["args"] = args
+    assert client.post(f"/api/v1/locations/{loc_id}/full-research").status_code == 202
+    assert client.post(f"/api/v1/locations/{loc_id}/full-research").status_code == 409
 
-        def start(self):
-            calls["started"] = True
 
-    monkeypatch.setattr(full_research, "FULL_RESEARCH_SCRIPT", Path(__file__))
-    monkeypatch.setattr(full_research.threading, "Thread", DummyThread)
+def test_start_full_research_can_force_refresh(client, monkeypatch):
+    calls = _patch_job_launch(monkeypatch)
+    loc_id = client.get("/api/v1/locations").json()[0]["id"]
 
     resp = client.post(f"/api/v1/locations/{loc_id}/full-research?force_research=true")
 
     assert resp.status_code == 202
     assert calls["args"][1] == loc_id
     assert calls["args"][2] is True
-    assert calls["started"] is True
 
 
-def test_list_full_research_jobs_returns_newest_first(client):
-    from datetime import datetime, timezone
+def test_list_full_research_jobs_newest_first_without_legacy(client, db_session):
+    from datetime import datetime
 
-    from relocation.api.routers import full_research
+    from relocation.models import ResearchRun
 
-    full_research._jobs.clear()
-    older = full_research.FullResearchJobOut(
-        id="older",
-        location_id=1,
-        location_name="Older",
-        status="completed",
-        started_at=datetime(2026, 3, 11, 12, 0, tzinfo=timezone.utc),
-        output=[],
+    loc_id = client.get("/api/v1/locations").json()[0]["id"]
+    db_session.add_all(
+        [
+            ResearchRun(kind="full", location_id=loc_id, status="completed", prompt_version="v1",
+                        started_at=datetime(2026, 3, 11, 12, 0)),
+            ResearchRun(kind="full", location_id=loc_id, status="running", prompt_version="v1",
+                        started_at=datetime(2026, 3, 12, 12, 0)),
+            ResearchRun(kind="full", location_id=loc_id, status="completed", prompt_version="legacy",
+                        started_at=datetime(2026, 3, 13, 12, 0)),
+            ResearchRun(kind="rescore", location_id=loc_id, status="completed", prompt_version="v1",
+                        started_at=datetime(2026, 3, 14, 12, 0)),
+        ]
     )
-    newer = full_research.FullResearchJobOut(
-        id="newer",
-        location_id=2,
-        location_name="Newer",
-        status="running",
-        started_at=datetime(2026, 3, 12, 12, 0, tzinfo=timezone.utc),
-        output=[],
-    )
-    full_research._jobs[older.id] = older
-    full_research._jobs[newer.id] = newer
+    db_session.commit()
 
     resp = client.get("/api/v1/full-research-jobs")
 
     assert resp.status_code == 200
-    assert [job["id"] for job in resp.json()] == ["newer", "older"]
+    assert [job["status"] for job in resp.json()] == ["running", "completed"]
+    assert client.get("/api/v1/full-research-jobs/not-a-number").status_code == 404
 
 
-def test_build_full_research_cmd_includes_force_flag():
-    from relocation.api.routers.full_research import _build_full_research_cmd
+def test_full_research_job_runs_pipeline_in_process(db_session, monkeypatch):
+    from sqlalchemy.orm import sessionmaker
 
-    cmd = _build_full_research_cmd(42, force_research=True)
+    from relocation.api.routers import full_research
+    from relocation.models import Location, ResearchRun
+    from relocation.pipeline import runner
+    from relocation.services.research_runs import create_run, finish_run
 
-    assert "--location-id" in cmd
-    assert "42" in cmd
-    assert cmd[-1] == "--force-research"
+    TestSession = sessionmaker(bind=db_session.get_bind())
+    monkeypatch.setattr(full_research, "SessionLocal", TestSession)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    seen = {}
+
+    def fake_run_location(location_id, *, force, run_id, kind, log):
+        seen.update(location_id=location_id, force=force, run_id=run_id, kind=kind)
+        assert isinstance(log, runner.RunLog)
+        log("[step] Research: Food scene")
+        finish_run(TestSession, run_id, status="completed", step="completed")
+
+    monkeypatch.setattr(full_research, "run_location", fake_run_location)
+    location = db_session.query(Location).first()
+    run = create_run(db_session, kind="full", location_id=location.id, status="queued")
+
+    full_research._run_full_research_job(run.id, location.id, True)
+
+    db_session.expire_all()
+    finished = db_session.get(ResearchRun, run.id)
+    assert finished.status == "completed"
+    assert "[step] Research: Food scene" in finished.log_tail
+    assert seen == {"location_id": location.id, "force": True, "run_id": run.id, "kind": "full"}
 
 
-def test_full_research_error_derivation_uses_last_error_line():
-    from relocation.api.routers.full_research import _derive_job_error
+def test_full_research_job_without_api_key_fails_cleanly(db_session, monkeypatch):
+    from sqlalchemy.orm import sessionmaker
 
-    output = [
-        "[step] Research categories",
-        "  [error] Tax implications: missing dated citations",
-        "[failures]",
-    ]
+    from relocation.api.routers import full_research
+    from relocation.models import Location, ResearchRun
+    from relocation.services.research_runs import create_run
 
-    assert _derive_job_error(output, 1) == "Tax implications: missing dated citations"
+    TestSession = sessionmaker(bind=db_session.get_bind())
+    monkeypatch.setattr(full_research, "SessionLocal", TestSession)
+    from relocation.settings import get_settings
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(get_settings(), "openai_api_key", None)
+    monkeypatch.setattr(full_research, "_discover_env_var_from_zsh", lambda name: None)
+    location = db_session.query(Location).first()
+    run = create_run(db_session, kind="full", location_id=location.id, status="queued")
+
+    full_research._run_full_research_job(run.id, location.id, False)
+
+    db_session.expire_all()
+    assert db_session.get(ResearchRun, run.id).status == "failed"
+
+
+def test_mark_interrupted_runs(db_session):
+    from relocation.models import ResearchRun
+    from relocation.services.research_runs import mark_interrupted_runs
+
+    db_session.add_all([ResearchRun(kind="full", status="running"), ResearchRun(kind="full", status="completed")])
+    db_session.commit()
+
+    assert mark_interrupted_runs(db_session) == 1
+    statuses = sorted(r.status for r in db_session.query(ResearchRun).all())
+    assert statuses == ["completed", "interrupted"]
+
+
+def _first_ids(client):
+    loc_id = client.get("/api/v1/locations").json()[0]["id"]
+    cat_id = next(c["id"] for c in client.get("/api/v1/categories").json() if c["name"] == "Food scene")
+    return loc_id, cat_id
+
+
+def test_new_research_supersedes_previous_current_row(client):
+    loc_id, cat_id = _first_ids(client)
+    first = client.post("/api/v1/research", json={"location_id": loc_id, "category_id": cat_id, "content": "v1"}).json()
+    second = client.post("/api/v1/research", json={"location_id": loc_id, "category_id": cat_id, "content": "v2"}).json()
+    other = client.post(
+        "/api/v1/research",
+        json={"location_id": loc_id, "category_id": cat_id, "content": "gemini view", "provider": "gemini"},
+    ).json()
+
+    assert second["is_current"] and other["is_current"]
+    current = client.get(f"/api/v1/research?location_id={loc_id}&category_id={cat_id}&current_only=true").json()
+    assert sorted(r["content"] for r in current) == ["gemini view", "v2"]
+    history = client.get(f"/api/v1/research?location_id={loc_id}&category_id={cat_id}&provider=openai").json()
+    assert [r["content"] for r in history] == ["v2", "v1"]
+    assert client.get(f"/api/v1/research/{first['id']}").json()["is_current"] is False
+
+
+def test_deleting_current_research_promotes_previous(client):
+    loc_id, cat_id = _first_ids(client)
+    first = client.post("/api/v1/research", json={"location_id": loc_id, "category_id": cat_id, "content": "v1"}).json()
+    second = client.post("/api/v1/research", json={"location_id": loc_id, "category_id": cat_id, "content": "v2"}).json()
+
+    assert client.delete(f"/api/v1/research/{second['id']}").status_code == 204
+    assert client.get(f"/api/v1/research/{first['id']}").json()["is_current"] is True
+
+
+def test_scores_upsert_per_provider_and_track_method(client):
+    loc_id, cat_id = _first_ids(client)
+    research = client.post("/api/v1/research", json={"location_id": loc_id, "category_id": cat_id, "content": "x"}).json()
+
+    llm = client.post(
+        "/api/v1/scores",
+        json={"location_id": loc_id, "category_id": cat_id, "score": 7, "method": "llm", "research_id": research["id"]},
+    ).json()
+    assert (llm["method"], llm["research_id"], llm["provider"]) == ("llm", research["id"], "openai")
+
+    gemini = client.post(
+        "/api/v1/scores",
+        json={"location_id": loc_id, "category_id": cat_id, "score": 4, "provider": "gemini", "method": "llm"},
+    ).json()
+    assert gemini["id"] != llm["id"]
+
+    # A slider edit with no method is a manual override of the openai score.
+    manual = client.post("/api/v1/scores", json={"location_id": loc_id, "category_id": cat_id, "score": 9}).json()
+    assert manual["id"] == llm["id"]
+    assert (manual["score"], manual["method"], manual["research_id"]) == (9, "manual", None)
+
+    only_gemini = client.get(f"/api/v1/locations/{loc_id}/scores?provider=gemini").json()
+    assert [s["score"] for s in only_gemini] == [4]
+
+
+def test_rankings_use_one_provider(client):
+    loc_id, cat_id = _first_ids(client)
+    client.post("/api/v1/scores", json={"location_id": loc_id, "category_id": cat_id, "score": 8})
+    client.post("/api/v1/scores", json={"location_id": loc_id, "category_id": cat_id, "score": 2, "provider": "gemini"})
+
+    def food_score(provider):
+        rankings = client.get(f"/api/v1/rankings?provider={provider}").json()
+        loc_name = client.get(f"/api/v1/locations/{loc_id}").json()["name"]
+        row = next(r for r in rankings if r["location_name"] == loc_name)
+        return next(d["score"] for d in row["details"] if d["category_name"] == "Food scene")
+
+    assert food_score("openai") == 8
+    assert food_score("gemini") == 2
+
+
+# --- Phase 2: countries and country-scope categories ---
+
+
+def _visa_category(client):
+    return next(c for c in client.get("/api/v1/categories").json() if c["key"] == "visa")
+
+
+def _two_peru_locations(client):
+    lima = next(loc for loc in client.get("/api/v1/locations").json() if loc["name"] == "Lima")
+    cusco = client.post("/api/v1/locations", json={"name": "Cusco", "country": "Peru"}).json()
+    return lima, cusco
+
+
+def _visa_research_payload(location_id, category_id, content):
+    return {
+        "location_id": location_id,
+        "category_id": category_id,
+        "content": content,
+        "source": "Migraciones portal, checked 2026-10-22",
+        "source_urls": ["https://www.gob.pe/migraciones"],
+        "source_checked_at": "2026-10-22",
+        "confidence": 0.7,
+    }
+
+
+def test_categories_expose_behaviour_flags(client):
+    by_key = {c["key"]: c for c in client.get("/api/v1/categories").json()}
+    assert by_key["visa"]["scope"] == "country" and by_key["visa"]["requires_citation"] is True
+    assert by_key["tax"]["scope"] == "location" and by_key["tax"]["refresh_after_days"] == 90
+    assert by_key["swimming"]["kind"] == "derived"
+
+
+def test_visa_research_is_stored_per_country_and_shared(client):
+    visa = _visa_category(client)
+    lima, cusco = _two_peru_locations(client)
+
+    created = client.post("/api/v1/research", json=_visa_research_payload(lima["id"], visa["id"], "Peru visas v1"))
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert (body["location_id"], body["country_code"]) == (None, "PE")
+
+    for loc in (lima, cusco):
+        rows = client.get(f"/api/v1/research?location_id={loc['id']}&current_only=true").json()
+        assert [r["content"] for r in rows if r["category_id"] == visa["id"]] == ["Peru visas v1"]
+
+    # Researching again from the other town replaces the country's current row.
+    client.post("/api/v1/research", json=_visa_research_payload(cusco["id"], visa["id"], "Peru visas v2"))
+    current = client.get("/api/v1/research?country_code=PE&current_only=true").json()
+    assert [r["content"] for r in current] == ["Peru visas v2"]
+
+
+def test_visa_score_set_via_one_location_applies_to_country(client):
+    visa = _visa_category(client)
+    lima, cusco = _two_peru_locations(client)
+
+    resp = client.post("/api/v1/scores", json={"location_id": lima["id"], "category_id": visa["id"], "score": 7})
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["scope"] == "country" and resp.json()["country_code"] == "PE"
+
+    cusco_scores = client.get(f"/api/v1/locations/{cusco['id']}/scores").json()
+    assert [(s["score"], s["scope"]) for s in cusco_scores if s["category_id"] == visa["id"]] == [(7, "country")]
+
+    client.post("/api/v1/scores", json={"country_code": "PE", "category_id": visa["id"], "score": 5})
+    lima_scores = client.get(f"/api/v1/locations/{lima['id']}/scores").json()
+    assert [s["score"] for s in lima_scores if s["category_id"] == visa["id"]] == [5]
+
+
+def test_location_level_category_requires_location(client):
+    food = next(c for c in client.get("/api/v1/categories").json() if c["key"] == "food")
+    resp = client.post("/api/v1/scores", json={"country_code": "PE", "category_id": food["id"], "score": 5})
+    assert resp.status_code == 422
+
+
+def test_visa_research_requires_citations(client):
+    visa = _visa_category(client)
+    lima, _ = _two_peru_locations(client)
+    resp = client.post(
+        "/api/v1/research",
+        json={"location_id": lima["id"], "category_id": visa["id"], "content": "x", "source": "general knowledge"},
+    )
+    assert resp.status_code == 422
+
+
+def test_new_country_is_created_on_demand_and_unknown_rejected(client):
+    resp = client.post("/api/v1/locations", json={"name": "Suva", "country": "Fiji"})
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["country_code"] == "FJ"
+    assert {"code": "FJ", "name": "Fiji", "parent_code": None} in client.get("/api/v1/countries").json()
+
+    pr = client.post("/api/v1/locations", json={"name": "San Juan", "country": "Puerto Rico"}).json()
+    assert pr["country_code"] == "PR"
+    countries = {c["code"]: c for c in client.get("/api/v1/countries").json()}
+    assert countries["PR"]["parent_code"] == "US"
+
+    assert client.post("/api/v1/locations", json={"name": "Atlantis", "country": "Atlantis"}).status_code == 422
+
+
+def test_location_score_rows_for_country_categories_are_rejected(db_session):
+    import pytest
+
+    from relocation.models import Category, Location, Score
+
+    visa = db_session.query(Category).filter_by(key="visa").one()
+    lima = db_session.query(Location).filter_by(name="Lima").one()
+    db_session.add(Score(location_id=lima.id, category_id=visa.id, score=5))
+    with pytest.raises(ValueError, match="per country"):
+        db_session.commit()
+    db_session.rollback()
+
+
+# --- Phase 3: named users, generic rankings, derived categories ---
+
+
+def test_users_have_display_names(client):
+    users = client.get("/api/v1/users").json()
+    assert [(u["name"], u["display_name"]) for u in users] == [("partner_a", "Partner A"), ("partner_b", "Partner B")]
+
+
+def test_rankings_are_keyed_by_user_id(client):
+    users = client.get("/api/v1/users").json()
+    loc_id, cat_id = _first_ids(client)
+    client.post("/api/v1/scores", json={"location_id": loc_id, "category_id": cat_id, "score": 8})
+
+    rankings = client.get("/api/v1/rankings").json()
+    row = next(r for r in rankings if r["location_id"] == loc_id)
+    assert set(row["user_scores"]) == {str(u["id"]) for u in users}
+    assert row["scored_categories"] == 1 and 0 < row["coverage"] < 1
+    detail = row["details"][0]
+    assert set(detail["weights"]) == {str(u["id"]) for u in users}
+
+    partner_a_view = client.get("/api/v1/rankings?user=partner_a").json()
+    rob_id = str(users[0]["id"])
+    rob_row = next(r for r in partner_a_view if r["location_id"] == loc_id)
+    assert rob_row["overall_score"] == rob_row["user_scores"][rob_id]
+    assert client.get("/api/v1/rankings?user=nobody").status_code == 404
+
+
+def test_llm_scores_for_derived_categories_are_rejected(client):
+    loc_id = client.get("/api/v1/locations").json()[0]["id"]
+    swim = next(c for c in client.get("/api/v1/categories").json() if c["key"] == "swimming")
+    resp = client.post(
+        "/api/v1/scores", json={"location_id": loc_id, "category_id": swim["id"], "score": 5, "method": "llm"}
+    )
+    assert resp.status_code == 422
+    # A manual override is allowed.
+    ok = client.post("/api/v1/scores", json={"location_id": loc_id, "category_id": swim["id"], "score": 5})
+    assert ok.status_code == 201

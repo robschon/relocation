@@ -11,7 +11,9 @@ import argparse
 import math
 
 from relocation.database import SessionLocal, init_db
-from relocation.models import Category, OceanTemperatureMonthly, Score, User, Weight
+from relocation.services.derived_scores import write_derived_score
+from relocation.services.research_runs import create_run, finish_run
+from relocation.models import Category, OceanTemperatureMonthly, User, Weight
 
 CATEGORY_NAME = "Year-round swimming viability"
 CATEGORY_DESCRIPTION = (
@@ -43,6 +45,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         help="Exact location id to process. Repeat for multiple ids.",
     )
+    parser.add_argument(
+        "--max-sea-distance-km",
+        type=float,
+        default=60.0,
+        help="Score 0 when the nearest sea grid cell is farther than this (default 60 km, about a day trip).",
+    )
     return parser.parse_args()
 
 
@@ -65,9 +73,11 @@ def main() -> int:
             max_sort_order = session.query(Category.sort_order).order_by(Category.sort_order.desc()).first()
             next_sort = (max_sort_order[0] if max_sort_order else 0) + 1
             category = Category(
+                key="swimming",
                 name=CATEGORY_NAME,
                 sort_order=next_sort,
                 description=CATEGORY_DESCRIPTION,
+                kind="derived",
             )
             session.add(category)
             session.flush()
@@ -125,7 +135,11 @@ def main() -> int:
                 print("[error] no matching ocean temperature baseline rows for requested location id(s)")
                 return 1
 
+        run = create_run(session, kind="enrichment", provider="computed", model=None, prompt_version=None)
+
         updated = 0
+
+        kept_manual = 0
         created = 0
         skipped = 0
         for location_id in location_ids:
@@ -151,35 +165,41 @@ def main() -> int:
                 f"{warm_months}/12 months have average sea temperature >= {threshold_c:.1f}C "
                 f"(baseline {baseline_start_year}-{baseline_end_year})."
             )
+            sea_distance = max((row.grid_distance_km or 0.0) for row in monthly_rows)
+            if sea_distance > args.max_sea_distance_km:
+                # Warm water 300 km away doesn't make a town good for swimming.
+                score_value = 0
+                notes = (
+                    f"Nearest sea is about {sea_distance:.0f} km away (more than {args.max_sea_distance_km:.0f} km), "
+                    f"so sea temperature doesn't make year-round swimming practical. " + notes
+                )
             if quality_flags:
                 notes += f" Quality flags: {', '.join(quality_flags)}."
 
-            existing_score = (
-                session.query(Score)
-                .filter(
-                    Score.location_id == location_id,
-                    Score.category_id == category.id,
-                )
-                .first()
+            outcome = write_derived_score(
+                session,
+                location_id=location_id,
+                category_id=category.id,
+                score=score_value,
+                notes=notes,
+                run_id=run.id,
             )
-            if existing_score:
-                existing_score.score = score_value
-                existing_score.notes = notes
+            if outcome == "created":
+                created += 1
+            elif outcome == "updated":
                 updated += 1
             else:
-                session.add(
-                    Score(
-                        location_id=location_id,
-                        category_id=category.id,
-                        score=score_value,
-                        notes=notes,
-                    )
-                )
-                created += 1
+                kept_manual += 1
 
         session.commit()
+        finish_run(
+            SessionLocal,
+            run.id,
+            status="completed",
+            step=f"created={created} updated={updated} kept_manual={kept_manual} skipped={skipped}",
+        )
 
-    print(f"[done] created={created} updated={updated} skipped={skipped}")
+    print(f"[done] created={created} updated={updated} kept_manual={kept_manual} skipped={skipped}")
     return 0
 
 

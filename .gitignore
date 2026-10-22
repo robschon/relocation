@@ -18,3 +18,17 @@ data/*.db
 # Tool caches
 .ruff_cache/
 .pytest_cache/
+
+# Logs and OS cruft
+logs/
+.DS_Store
+
+# Local caches
+.uv-cache/
+.pycache/
+
+# Database backups (data/*.db is already ignored above)
+data/backups/
+
+# Pipeline trial databases
+data/trials/

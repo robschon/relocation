@@ -1,7 +1,8 @@
 #!/bin/zsh
 set -euo pipefail
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-cd $HOME/Code/relocation
+# Run from this checkout (the folder containing scripts/), wherever it lives.
+cd "${0:A:h}/.."
 export UV_CACHE_DIR=.uv-cache
 
 existing_pids=(${${(@f)"$(lsof -tiTCP:8000 -sTCP:LISTEN 2>/dev/null || true)"}:#})

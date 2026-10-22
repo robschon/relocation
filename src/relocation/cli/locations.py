@@ -43,6 +43,8 @@ def add(
 ):
     """Add a new location."""
     normalized_country, normalized_country_code = normalize_country_fields(country=country)
+    if not normalized_country_code:
+        raise SystemExit(f"Unknown country '{country}'. Use a country name or ISO code.")
     with SessionLocal() as session:
         loc = Location(
             name=name,

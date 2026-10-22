@@ -323,35 +323,22 @@ Guidelines:
 - A category can have multiple pros or cons if warranted
 - Cross-reference other locations where useful (e.g., "20-30% higher than Funchal")
 
-### 7. (Optional) Run AI research script
+### 7. (Optional) Run AI research
 
-Populates the `research` and `visa_info` tables with AI-generated structured data, and also writes a bespoke one-sentence location description to `locations.description`. Requires the backend API to be running.
+Researches and scores every category, refreshes the country's visa info, and writes pros/cons
+plus a one-sentence description. Needs `OPENAI_API_KEY` (shell or `.env`); the backend
+doesn't need to be running.
 
 ```bash
-# Start the backend API (in another terminal)
-uv run uvicorn relocation.api.app:app --host 127.0.0.1 --port 8000
-
-# Use OpenAI script (requires OPENAI_API_KEY)
-# Run research for all categories
-uv run python scripts/research_location_openai.py "<City>"
-
-# Re-research all categories (even if already populated)
-uv run python scripts/research_location_openai.py "<City>" --force
-
-# Research a single category
-uv run python scripts/research_location_openai.py "<City>" --category "Cost"
-
-# Skip bespoke description generation
-uv run python scripts/research_location_openai.py "<City>" --skip-description
-
-# Overwrite an existing description with a new bespoke one
-uv run python scripts/research_location_openai.py "<City>" --force-description
-
-# Optional: Claude version (requires ANTHROPIC_API_KEY)
-uv run python scripts/research_location.py "<City>"
-uv run python scripts/research_location.py "<City>" --skip-description
-uv run python scripts/research_location.py "<City>" --force-description
+uv run relocation pipeline run "<City>"                     # what's missing or stale
+uv run relocation pipeline run "<City>" --force             # redo everything researched
+uv run relocation pipeline run "<City>" --category cost_of_living
+uv run relocation pipeline run "<City>" --skip-synthesis    # no pros/cons/description
+uv run relocation pipeline run "<City>" --force-description # rewrite the description
 ```
+
+(`scripts/research_location_openai.py` and `scripts/full_research_location_openai.py` take the
+old flags and call the same pipeline.)
 
 What changed in the current generation flow:
 

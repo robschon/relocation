@@ -15,6 +15,9 @@ def resolve_location(session: Session, query: str) -> Location:
         .filter(Location.name.ilike(f"%{query}%"))
         .all()
     )
+    exact = [m for m in matches if m.name.lower() == query.strip().lower()]
+    if len(exact) == 1:
+        return exact[0]  # "Lima" means Lima, not Limassol
     if len(matches) == 1:
         return matches[0]
     if len(matches) == 0:

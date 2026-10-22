@@ -25,6 +25,8 @@ def add(
 ):
     """Add visa/immigration info for a country."""
     normalized_country, normalized_country_code = normalize_country_fields(country=country)
+    if not normalized_country_code:
+        raise SystemExit(f"Unknown country '{country}'. Use a country name or ISO code.")
     with SessionLocal() as session:
         info = VisaInfo(
             country=normalized_country,

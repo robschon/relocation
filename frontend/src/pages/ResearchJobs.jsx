@@ -11,6 +11,7 @@ function statusClasses(status) {
   if (status === 'queued') return 'bg-amber-100 text-amber-800'
   if (status === 'completed') return 'bg-emerald-100 text-emerald-800'
   if (status === 'failed') return 'bg-rose-100 text-rose-800'
+  if (status === 'interrupted') return 'bg-gray-200 text-gray-700'
   return 'bg-gray-100 text-gray-700'
 }
 
@@ -84,7 +85,7 @@ export default function ResearchJobs() {
 
   const activeJobs = jobs.filter((job) => job.status === 'queued' || job.status === 'running')
   const completedJobs = jobs.filter((job) => job.status === 'completed')
-  const failedJobs = jobs.filter((job) => job.status === 'failed')
+  const failedJobs = jobs.filter((job) => job.status === 'failed' || job.status === 'interrupted')
   const selectedJob = jobs.find((job) => job.id === selectedJobId) || null
 
   const jobsWithSortFields = useMemo(() => jobs.map((job) => ({
@@ -104,7 +105,7 @@ export default function ResearchJobs() {
         <div>
           <h1 className="text-2xl font-bold">Research Jobs</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Live status for queued, running, completed, and failed full research jobs.
+            Live status for queued, running, completed, failed, and interrupted full research jobs.
           </p>
         </div>
         <div className="text-xs text-gray-500">

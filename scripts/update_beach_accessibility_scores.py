@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
 import time
 
 import httpx
 from sqlalchemy import func, or_
 
 from relocation.database import SessionLocal, init_db
+from relocation.services.derived_scores import write_derived_score
+from relocation.services.research_runs import create_run, finish_run
 from relocation.models import Category, Location, OceanTemperatureMonthly, Score, User, Weight
 from relocation.services.beach_accessibility import (
     compute_beach_accessibility_score,
@@ -27,7 +30,20 @@ CATEGORY_DESCRIPTION = (
     "Higher scores indicate beaches are practical for frequent daily use."
 )
 DEFAULT_WEIGHT = 5.0
-OVERPASS_API_URL = "https://overpass-api.de/api/interpreter"
+OVERPASS_API_URL = os.getenv("RELOCATION_OVERPASS_URL", "https://overpass-api.de/api/interpreter")
+# Stop instead of writing fallback scores everywhere when Overpass is unreachable.
+ABORT_AFTER_INITIAL_FAILURES = 3
+# Overpass now rejects generic HTTP clients (406); identify ourselves. Set
+# RELOCATION_OVERPASS_CONTACT (e.g. an email) to include a contact, as Overpass asks.
+_CONTACT = os.getenv("RELOCATION_OVERPASS_CONTACT", "").strip()
+OVERPASS_HEADERS = {
+    "User-Agent": "relocation-research/0.1 (personal relocation research; low volume"
+    + (f"; contact: {_CONTACT}" if _CONTACT else "")
+    + ")",
+    "Referer": "https://github.com/robschon/relocation",
+    "Accept": "application/json",
+}
+FALLBACK_NOTE_PREFIX = "Beach mapping lookup failed;"
 
 
 def parse_args() -> argparse.Namespace:
@@ -47,7 +63,13 @@ def parse_args() -> argparse.Namespace:
         "--radius-km",
         type=float,
         default=50.0,
-        help="Radius for beach search around each location coordinate.",
+        help="Widest beach search radius (used only when nothing public is found within --near-radius-km).",
+    )
+    parser.add_argument(
+        "--near-radius-km",
+        type=float,
+        default=20.0,
+        help="First, cheaper search radius; covers the 10/20 km density counts used in scoring.",
     )
     parser.add_argument(
         "--request-interval-seconds",
@@ -58,8 +80,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--timeout-seconds",
         type=float,
-        default=45.0,
+        default=100.0,
         help="HTTP timeout for Overpass requests.",
+    )
+    parser.add_argument(
+        "--only-missing",
+        action="store_true",
+        help="Skip locations that already have a computed (or manually set) beach score.",
+    )
+    parser.add_argument(
+        "--overpass-url",
+        default=OVERPASS_API_URL,
+        help="Overpass interpreter URL (default: overpass-api.de; mirrors: "
+        "https://overpass.kumi.systems/api/interpreter, https://overpass.private.coffee/api/interpreter).",
     )
     return parser.parse_args()
 
@@ -78,20 +111,51 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return radius_km * c
 
 
-def _overpass_query(latitude: float, longitude: float, radius_km: float) -> str:
-    radius_m = int(round(max(1.0, radius_km) * 1000))
+def _bounding_box(latitude: float, longitude: float, radius_km: float) -> tuple[float, float, float, float]:
+    """(south, west, north, east) box that contains the radius_km circle."""
+    lat_delta = radius_km / 111.32
+    lon_delta = radius_km / (111.32 * max(0.01, math.cos(math.radians(latitude))))
     return (
-        "[out:json][timeout:40];"
-        f"(node(around:{radius_m},{latitude:.6f},{longitude:.6f})['natural'='beach'];"
-        f"way(around:{radius_m},{latitude:.6f},{longitude:.6f})['natural'='beach'];"
-        f"relation(around:{radius_m},{latitude:.6f},{longitude:.6f})['natural'='beach'];);"
-        "out center tags;"
+        max(-90.0, latitude - lat_delta),
+        max(-180.0, longitude - lon_delta),
+        min(90.0, latitude + lat_delta),
+        min(180.0, longitude + lon_delta),
     )
+
+
+def _overpass_query(latitude: float, longitude: float, radius_km: float, server_timeout: int = 90) -> str:
+    # A bounding box is much cheaper for Overpass than around:, especially for ways and
+    # relations; results outside the circle are dropped client-side by exact distance.
+    south, west, north, east = _bounding_box(latitude, longitude, max(1.0, radius_km))
+    return (
+        f"[out:json][timeout:{server_timeout}];"
+        f'nwr["natural"="beach"]({south:.6f},{west:.6f},{north:.6f},{east:.6f});'
+        "out tags center;"
+    )
+
+
+def _beaches_within(elements: list[dict], latitude: float, longitude: float, radius_km: float) -> tuple[list[float], int]:
+    """Distances to public beaches within radius_km, and how many private-only beaches were seen."""
+    public_distances: list[float] = []
+    private_count = 0
+    for element in elements:
+        coords = _element_coordinates(element)
+        if not coords:
+            continue
+        distance_km = _haversine_km(latitude, longitude, coords[0], coords[1])
+        if distance_km > radius_km:
+            continue
+        if _is_public_beach(element):
+            public_distances.append(distance_km)
+        else:
+            private_count += 1
+    return public_distances, private_count
 
 
 def _fetch_beach_elements(
     client: httpx.Client,
     *,
+    overpass_url: str,
     latitude: float,
     longitude: float,
     radius_km: float,
@@ -100,7 +164,7 @@ def _fetch_beach_elements(
     last_error: Exception | None = None
     for attempt in range(1, 5):
         try:
-            response = client.post(OVERPASS_API_URL, data={"data": query})
+            response = client.post(overpass_url, data={"data": query})
             if response.status_code == 429:
                 time.sleep(min(20.0, 2**attempt))
                 continue
@@ -182,9 +246,11 @@ def main() -> int:
             max_sort_order = session.query(Category.sort_order).order_by(Category.sort_order.desc()).first()
             next_sort = (max_sort_order[0] if max_sort_order else 0) + 1
             category = Category(
+                key="beach_access",
                 name=CATEGORY_NAME,
                 sort_order=next_sort,
                 description=CATEGORY_DESCRIPTION,
+                kind="derived",
             )
             session.add(category)
             session.flush()
@@ -209,19 +275,32 @@ def main() -> int:
         if args.location:
             predicates = [Location.name.ilike(name.strip()) for name in args.location]
             query = query.filter(or_(*predicates))
+        if args.only_missing:
+            # Fallback scores (Overpass was unreachable) still count as missing, so they get retried.
+            already_scored = session.query(Score.location_id).filter(
+                Score.category_id == category.id,
+                Score.method.in_(("derived", "manual")),
+                or_(Score.notes.is_(None), Score.notes.notlike(f"{FALLBACK_NOTE_PREFIX}%")),
+            )
+            query = query.filter(Location.id.notin_(already_scored))
         locations = query.all()
 
         if not locations:
+            if args.only_missing:
+                print("[done] every matching location already has a beach score; nothing to fetch")
+                return 0
             print("[warn] no locations matched filters")
             return 1
 
         created = 0
+        run = create_run(session, kind="enrichment", provider="computed", model=None, prompt_version=None)
         updated = 0
+        kept_manual = 0
         skipped = 0
         fallback_used = 0
         failures = 0
 
-        with httpx.Client(timeout=args.timeout_seconds) as client:
+        with httpx.Client(timeout=args.timeout_seconds, headers=OVERPASS_HEADERS) as client:
             for idx, location in enumerate(locations, start=1):
                 print(f"[{idx}/{len(locations)}] {location.name} ({location.country})")
                 if location.latitude is None or location.longitude is None:
@@ -233,30 +312,20 @@ def main() -> int:
                 notes: str | None = None
 
                 try:
+                    lat, lon = float(location.latitude), float(location.longitude)
+                    # Small search first; widen only if nothing public is that close.
+                    radius_used = min(float(args.near_radius_km), float(args.radius_km))
                     elements = _fetch_beach_elements(
-                        client,
-                        latitude=float(location.latitude),
-                        longitude=float(location.longitude),
-                        radius_km=float(args.radius_km),
+                        client, overpass_url=args.overpass_url, latitude=lat, longitude=lon, radius_km=radius_used
                     )
-
-                    public_distances: list[float] = []
-                    private_count = 0
-                    for element in elements:
-                        coords = _element_coordinates(element)
-                        if not coords:
-                            continue
-                        beach_lat, beach_lon = coords
-                        distance_km = _haversine_km(
-                            float(location.latitude),
-                            float(location.longitude),
-                            beach_lat,
-                            beach_lon,
+                    public_distances, private_count = _beaches_within(elements, lat, lon, radius_used)
+                    if not public_distances and float(args.radius_km) > radius_used:
+                        radius_used = float(args.radius_km)
+                        print(f"  [info] nothing public within {args.near_radius_km:.0f} km; widening to {radius_used:.0f} km")
+                        elements = _fetch_beach_elements(
+                            client, overpass_url=args.overpass_url, latitude=lat, longitude=lon, radius_km=radius_used
                         )
-                        if _is_public_beach(element):
-                            public_distances.append(distance_km)
-                        else:
-                            private_count += 1
+                        public_distances, private_count = _beaches_within(elements, lat, lon, radius_used)
 
                     nearest_public = min(public_distances) if public_distances else None
                     public_within_10 = sum(1 for d in public_distances if d <= 10.0)
@@ -273,7 +342,7 @@ def main() -> int:
                         f"public beaches within 10 km: {public_within_10}; "
                         f"within 20 km: {public_within_20}; "
                         f"private-only mapped beaches: {private_count}; "
-                        f"search radius: {float(args.radius_km):.0f} km."
+                        f"search radius: {radius_used:.0f} km."
                     )
                 except Exception as exc:  # noqa: BLE001
                     fallback_distance = _latest_ocean_grid_distance_km(location.id)
@@ -283,43 +352,64 @@ def main() -> int:
                         continue
                     score_value = fallback_score_from_ocean_distance_km(fallback_distance)
                     notes = (
-                        "Beach mapping lookup failed; used nearest ocean-grid distance fallback "
+                        f"{FALLBACK_NOTE_PREFIX} used nearest ocean-grid distance fallback "
                         f"({fallback_distance:.2f} km) from ocean temperature source."
                     )
                     fallback_used += 1
                     print(f"  [warn] used fallback scoring: {exc}")
+                    lookups_succeeded = idx - skipped - fallback_used - failures
+                    if lookups_succeeded == 0 and fallback_used + failures >= ABORT_AFTER_INITIAL_FAILURES:
+                        session.rollback()
+                        finish_run(
+                            SessionLocal,
+                            run.id,
+                            status="failed",
+                            error=f"Overpass unreachable at {args.overpass_url}: {exc}",
+                        )
+                        print(
+                            f"[abort] The first {ABORT_AFTER_INITIAL_FAILURES} beach lookups all failed, so Overpass "
+                            f"looks unreachable ({args.overpass_url}). Nothing was written.\n"
+                            "        Check proxy/VPN settings, or retry with --overpass-url pointing at a mirror."
+                        )
+                        return 3
 
-                existing_score = (
-                    session.query(Score)
-                    .filter(
-                        Score.location_id == location.id,
-                        Score.category_id == category.id,
-                    )
-                    .first()
+                outcome = write_derived_score(
+                    session,
+                    location_id=location.id,
+                    category_id=category.id,
+                    score=score_value,
+                    notes=notes,
+                    run_id=run.id,
                 )
-                if existing_score:
-                    existing_score.score = score_value
-                    existing_score.notes = notes
+                if outcome == "created":
+                    created += 1
+                elif outcome == "updated":
                     updated += 1
                 else:
-                    session.add(
-                        Score(
-                            location_id=location.id,
-                            category_id=category.id,
-                            score=score_value,
-                            notes=notes,
-                        )
-                    )
-                    created += 1
+                    kept_manual += 1
                 print(f"  [ok] score={score_value}/10")
 
                 if args.request_interval_seconds > 0:
                     time.sleep(args.request_interval_seconds)
 
+        attempted = len(locations) - skipped
+        if attempted > 0 and fallback_used + failures == attempted:
+            # Every lookup failed: keep existing scores rather than replace them with fallbacks.
+            session.rollback()
+            finish_run(SessionLocal, run.id, status="failed", error="Every Overpass lookup failed; nothing written.")
+            print(f"[abort] All {attempted} beach lookup(s) failed, so nothing was written.")
+            return 3
+
         session.commit()
+        finish_run(
+            SessionLocal,
+            run.id,
+            status="completed" if failures == 0 else "failed",
+            step=f"created={created} updated={updated} kept_manual={kept_manual} skipped={skipped} failed={failures}",
+        )
 
     print(
-        f"[done] created={created} updated={updated} skipped={skipped} "
+        f"[done] created={created} updated={updated} kept_manual={kept_manual} skipped={skipped} "
         f"fallback_used={fallback_used} failed={failures}"
     )
     return 0 if failures == 0 else 2

@@ -2,15 +2,11 @@ import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
-import { getLocations, getRankings } from '../api'
+import { getLocations, getRankings, getUsers } from '../api'
 import { scoreToColor } from '../utils/scoreColor'
 import Spinner from '../components/Spinner'
+import { personLabel, userScore } from '../utils/people'
 
-const SCORE_FIELDS = {
-  combined: 'overall_score',
-  husband: 'husband_score',
-  wife: 'wife_score',
-}
 
 function scoreRadius(score, minScore, maxScore) {
   if (score == null) return 5
@@ -22,6 +18,7 @@ function scoreRadius(score, minScore, maxScore) {
 export default function MapView() {
   const [locations, setLocations] = useState([])
   const [rankings, setRankings] = useState([])
+  const [users, setUsers] = useState([])
   const [view, setView] = useState('combined')
   const [topCount, setTopCount] = useState('all')
   const [loading, setLoading] = useState(true)
@@ -31,9 +28,11 @@ export default function MapView() {
     Promise.all([
       getLocations({ fully_scored_only: true }),
       getRankings('combined', { fully_scored_only: true }),
-    ]).then(([locs, ranks]) => {
+      getUsers(),
+    ]).then(([locs, ranks, us]) => {
       setLocations(locs)
       setRankings(ranks)
+      setUsers(us)
     }).catch((e) => setError(e.message)).finally(() => setLoading(false))
   }, [])
 
@@ -55,11 +54,17 @@ export default function MapView() {
     })
     .filter((marker) => marker.ranking)
 
-  const scoreField = SCORE_FIELDS[view]
+  // 'combined' uses the overall score; otherwise view is a user's name.
+  const viewUser = users.find((u) => u.name === view)
+  const viewScore = (ranking) => {
+    if (!ranking) return null
+    return viewUser ? userScore(ranking, viewUser) : ranking.overall_score
+  }
 
   const rankedMarkers = useMemo(
-    () => [...markers].sort((a, b) => (b.ranking?.[scoreField] ?? 0) - (a.ranking?.[scoreField] ?? 0)),
-    [markers, scoreField],
+    () => [...markers].sort((a, b) => (viewScore(b.ranking) ?? 0) - (viewScore(a.ranking) ?? 0)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [markers, view, users],
   )
 
   const displayedMarkers = useMemo(() => {
@@ -71,7 +76,7 @@ export default function MapView() {
 
   // Compute actual score range for the current view
   const scoredValues = displayedMarkers
-    .map((m) => m.ranking?.[scoreField])
+    .map((m) => viewScore(m.ranking))
     .filter((s) => s != null && s > 0)
   const minScore = scoredValues.length > 0 ? Math.min(...scoredValues) : 0
   const maxScore = scoredValues.length > 0 ? Math.max(...scoredValues) : 10
@@ -107,13 +112,13 @@ export default function MapView() {
             <option value="50">Top 50</option>
           </select>
           <div className="flex gap-2">
-            {['combined', 'husband', 'wife'].map((v) => (
+            {[{ value: 'combined', label: 'Combined' }, ...users.map((u) => ({ value: u.name, label: personLabel(u) }))].map((v) => (
               <button
-                key={v}
-                onClick={() => setView(v)}
-                className={`px-3 py-1 text-sm rounded ${view === v ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+                key={v.value}
+                onClick={() => setView(v.value)}
+                className={`px-3 py-1 text-sm rounded ${view === v.value ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
               >
-                {v.charAt(0).toUpperCase() + v.slice(1)}
+                {v.label}
               </button>
             ))}
           </div>
@@ -132,7 +137,7 @@ export default function MapView() {
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
           {displayedMarkers.map((m) => {
-            const score = m.ranking?.[scoreField]
+            const score = viewScore(m.ranking)
             return (
               <CircleMarker
                 key={m.id}
@@ -154,8 +159,9 @@ export default function MapView() {
                     {m.ranking ? (
                       <div className="mt-1 space-y-0.5">
                         <div>Combined: <span className="font-mono">{(m.ranking.overall_score ?? 0).toFixed(2)}</span></div>
-                        <div>Husband: <span className="font-mono">{(m.ranking.husband_score ?? 0).toFixed(2)}</span></div>
-                        <div>Wife: <span className="font-mono">{(m.ranking.wife_score ?? 0).toFixed(2)}</span></div>
+                        {users.map((u) => (
+                          <div key={u.id}>{personLabel(u)}: <span className="font-mono">{userScore(m.ranking, u).toFixed(2)}</span></div>
+                        ))}
                       </div>
                     ) : null}
                   </div>

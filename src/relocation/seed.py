@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from relocation.countries import normalize_country_fields
 from relocation.models import Category, Location, User, Weight
 
-SEED_USERS = ["husband", "wife"]
+SEED_USERS = [("partner_a", "Partner A"), ("partner_b", "Partner B")]  # (name, display_name)
 
 SEED_CATEGORIES = [
     {
@@ -83,6 +83,36 @@ SEED_CATEGORIES = [
     },
 ]
 
+# Behaviour flags per category (see Category in models.py).
+# name -> (key, scope, kind, needs_web, requires_citation, refresh_after_days)
+CATEGORY_FLAGS = {
+    "Cost of living / housing": ("cost_of_living", "location", "researched", True, False, 365),
+    "Climate / weather": ("climate", "location", "researched", False, False, None),
+    "Healthcare quality & access": ("healthcare", "location", "researched", True, False, 365),
+    "Visa / residency feasibility": ("visa", "country", "researched", True, True, 90),
+    "Tax implications": ("tax", "location", "researched", True, True, 90),
+    "Safety / stability / values": ("safety_values", "location", "researched", False, False, 365),
+    "Language & community": ("language_community", "location", "researched", False, False, None),
+    "Walkability / public transit": ("walkability", "location", "researched", False, False, None),
+    "Cultural amenities / lifestyle": ("culture", "location", "researched", False, False, None),
+    "Travel connectivity & proximity to family/friends": ("travel_connectivity", "location", "researched", True, False, 365),
+    "Food scene": ("food", "location", "researched", False, False, None),
+    "Natural beauty / outdoor recreation": ("nature", "location", "researched", False, False, None),
+    "Environmental quality & climate risk": ("environment_climate_risk", "location", "researched", False, False, None),
+    "Year-round swimming viability": ("swimming", "location", "derived", False, False, None),
+    "Beach accessibility": ("beach_access", "location", "derived", False, False, None),
+}
+for _category in SEED_CATEGORIES:
+    _key, _scope, _kind, _web, _cite, _refresh = CATEGORY_FLAGS[_category["name"]]
+    _category.update(
+        key=_key,
+        scope=_scope,
+        kind=_kind,
+        needs_web=_web,
+        requires_citation=_cite,
+        refresh_after_days=_refresh,
+    )
+
 SEED_LOCATIONS = [
     {
         "name": "Osa Peninsula",
@@ -120,9 +150,9 @@ def seed_database(session: Session) -> dict[str, int]:
     counts = {"users": 0, "categories": 0, "locations": 0, "weights": 0}
 
     # Users
-    for name in SEED_USERS:
+    for name, display_name in SEED_USERS:
         if not session.query(User).filter_by(name=name).first():
-            session.add(User(name=name))
+            session.add(User(name=name, display_name=display_name))
             counts["users"] += 1
 
     session.flush()

@@ -1,33 +1,36 @@
+"""Full-research jobs: start the pipeline for a location and follow its progress.
+
+Jobs are ``research_runs`` rows with kind="full", so they survive backend restarts
+(a restart marks unfinished runs "interrupted"). The pipeline runs in a worker thread
+in this process.
+"""
+
 from __future__ import annotations
 
 import os
-import re
 import subprocess
-import sys
 import threading
-import uuid
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from relocation.database import get_db
-from relocation.models import Location
+from relocation.database import SessionLocal, get_db
+from relocation.models import Location, ResearchRun
+from relocation.pipeline.runner import RunLog, run_location
+from relocation.services.research_runs import ACTIVE_STATUSES, create_run, finish_run
 
 router = APIRouter(tags=["full_research"])
 
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
-FULL_RESEARCH_SCRIPT = PROJECT_ROOT / "scripts" / "full_research_location_openai.py"
 
-JobStatus = Literal["queued", "running", "completed", "failed"]
+JobStatus = Literal["queued", "running", "completed", "failed", "interrupted"]
 
 
 class FullResearchJobOut(BaseModel):
     id: str
-    location_id: int
+    location_id: int | None
     location_name: str
     status: JobStatus
     started_at: datetime
@@ -35,29 +38,24 @@ class FullResearchJobOut(BaseModel):
     step: str | None = None
     error: str | None = None
     output: list[str]
+    provider: str
+    model: str | None = None
 
 
-_jobs_lock = threading.Lock()
-_jobs: dict[str, FullResearchJobOut] = {}
-
-
-def _update_job(job_id: str, **changes) -> None:
-    with _jobs_lock:
-        job = _jobs[job_id]
-        data = job.model_dump()
-        data.update(changes)
-        _jobs[job_id] = FullResearchJobOut(**data)
-
-
-def _append_output(job_id: str, line: str) -> None:
-    with _jobs_lock:
-        job = _jobs[job_id]
-        output = list(job.output)
-        output.append(line)
-        # Keep the last 400 lines for UI display.
-        if len(output) > 400:
-            output = output[-400:]
-        _jobs[job_id] = FullResearchJobOut(**{**job.model_dump(), "output": output})
+def _job_out(run: ResearchRun) -> FullResearchJobOut:
+    return FullResearchJobOut(
+        id=str(run.id),
+        location_id=run.location_id,
+        location_name=run.location.name if run.location else "(deleted location)",
+        status=run.status,
+        started_at=run.started_at,
+        finished_at=run.finished_at,
+        step=run.step,
+        error=run.error,
+        output=run.log_tail.splitlines() if run.log_tail else [],
+        provider=run.provider,
+        model=run.model,
+    )
 
 
 def _discover_env_var_from_zsh(var_name: str) -> str | None:
@@ -77,96 +75,34 @@ def _discover_env_var_from_zsh(var_name: str) -> str | None:
     return value or None
 
 
-def _build_full_research_cmd(location_id: int, *, force_research: bool = False) -> list[str]:
-    cmd = [sys.executable, str(FULL_RESEARCH_SCRIPT), "--location-id", str(location_id)]
-    if force_research:
-        cmd.append("--force-research")
-    return cmd
+def _ensure_openai_key() -> bool:
+    from relocation.settings import get_settings
 
-
-def _derive_job_error(output: list[str], return_code: int) -> str:
-    patterns = (
-        re.compile(r"^\s*\[error\]\s*(.+)$", re.IGNORECASE),
-        re.compile(r"^\s*error:\s*(.+)$", re.IGNORECASE),
-        re.compile(r"^\s*traceback", re.IGNORECASE),
-    )
-    for line in reversed(output):
-        stripped = line.strip()
-        if not stripped:
-            continue
-        for pattern in patterns:
-            match = pattern.search(stripped)
-            if match:
-                if match.lastindex:
-                    return match.group(1).strip()
-                return stripped
-    return f"Pipeline exited with code {return_code}"
-
-
-def _run_full_research_job(job_id: str, location_id: int, force_research: bool) -> None:
-    _update_job(job_id, status="running", step="starting")
-
-    cmd = _build_full_research_cmd(location_id, force_research=force_research)
-    env = os.environ.copy()
-    if not env.get("OPENAI_API_KEY"):
+    if get_settings().openai_api_key:  # shell env or .env
+        return True
+    if not os.environ.get("OPENAI_API_KEY"):
         discovered = _discover_env_var_from_zsh("OPENAI_API_KEY")
         if discovered:
-            env["OPENAI_API_KEY"] = discovered
+            os.environ["OPENAI_API_KEY"] = discovered
+    return bool(os.environ.get("OPENAI_API_KEY"))
 
-    if not env.get("OPENAI_API_KEY"):
-        _update_job(
-            job_id,
+
+def _run_full_research_job(run_id: int, location_id: int, force_research: bool) -> None:
+    """Runs in a worker thread inside the backend process (no subprocess, no HTTP back to ourselves)."""
+    if not _ensure_openai_key():
+        finish_run(
+            SessionLocal,
+            run_id,
             status="failed",
-            error="OPENAI_API_KEY is not set for backend jobs. Add it to ~/.zshrc and restart backend.",
-            finished_at=datetime.now(timezone.utc),
             step="missing_openai_key",
+            error="OPENAI_API_KEY is not set for backend jobs. Add it to .env or ~/.zshrc and restart the backend.",
         )
         return
-
+    log = RunLog(run_id=run_id, session_factory=SessionLocal, echo=False)
     try:
-        process = subprocess.Popen(
-            cmd,
-            cwd=str(PROJECT_ROOT),
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-    except Exception as exc:
-        _update_job(
-            job_id,
-            status="failed",
-            error=f"Failed to start job: {exc}",
-            finished_at=datetime.now(timezone.utc),
-            step="start_failed",
-        )
-        return
-
-    assert process.stdout is not None
-    for raw_line in process.stdout:
-        line = raw_line.rstrip()
-        _append_output(job_id, line)
-        if line.startswith("[step]"):
-            _update_job(job_id, step=line.replace("[step]", "", 1).strip())
-
-    return_code = process.wait()
-    if return_code == 0:
-        _update_job(
-            job_id,
-            status="completed",
-            finished_at=datetime.now(timezone.utc),
-            step="completed",
-        )
-    else:
-        with _jobs_lock:
-            output = list(_jobs[job_id].output)
-        _update_job(
-            job_id,
-            status="failed",
-            error=_derive_job_error(output, return_code),
-            finished_at=datetime.now(timezone.utc),
-            step="failed",
-        )
+        run_location(location_id, force=force_research, run_id=run_id, kind="full", log=log)
+    except Exception:  # run_location already marked the run failed with the error
+        pass
 
 
 @router.post("/locations/{location_id}/full-research", response_model=FullResearchJobOut, status_code=202)
@@ -179,51 +115,55 @@ def start_full_research(
     if not location:
         raise HTTPException(status_code=404, detail="Location not found")
 
-    if not FULL_RESEARCH_SCRIPT.exists():
-        raise HTTPException(status_code=500, detail="Full research script is missing")
-
-    with _jobs_lock:
-        for job in _jobs.values():
-            if job.location_id == location_id and job.status in {"queued", "running"}:
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"A full-research job is already running for {location.name}",
-                )
-
-        job_id = str(uuid.uuid4())
-        job = FullResearchJobOut(
-            id=job_id,
-            location_id=location.id,
-            location_name=location.name,
-            status="queued",
-            started_at=datetime.now(timezone.utc),
-            output=[],
+    active = (
+        db.query(ResearchRun)
+        .filter(
+            ResearchRun.kind == "full",
+            ResearchRun.location_id == location_id,
+            ResearchRun.status.in_(ACTIVE_STATUSES),
         )
-        _jobs[job_id] = job
+        .first()
+    )
+    if active:
+        raise HTTPException(
+            status_code=409,
+            detail=f"A full-research job is already running for {location.name}",
+        )
+
+    run = create_run(
+        db,
+        kind="full",
+        location_id=location.id,
+        country_code=location.country_code,
+        status="queued",
+    )
 
     thread = threading.Thread(
         target=_run_full_research_job,
-        args=(job_id, location.id, force_research),
+        args=(run.id, location.id, force_research),
         daemon=True,
     )
     thread.start()
-    return job
+    return _job_out(run)
+
+
+def _job_query(db: Session):
+    # Legacy runs reconstructed by the Phase 1 migration have no output to show.
+    return db.query(ResearchRun).filter(
+        ResearchRun.kind == "full",
+        (ResearchRun.prompt_version.is_(None)) | (ResearchRun.prompt_version != "legacy"),
+    )
 
 
 @router.get("/full-research-jobs", response_model=list[FullResearchJobOut])
-def list_full_research_jobs():
-    with _jobs_lock:
-        return sorted(
-            _jobs.values(),
-            key=lambda job: job.started_at,
-            reverse=True,
-        )
+def list_full_research_jobs(limit: int = 200, db: Session = Depends(get_db)):
+    runs = _job_query(db).order_by(ResearchRun.started_at.desc()).limit(limit).all()
+    return [_job_out(run) for run in runs]
 
 
 @router.get("/full-research-jobs/{job_id}", response_model=FullResearchJobOut)
-def get_full_research_job(job_id: str):
-    with _jobs_lock:
-        job = _jobs.get(job_id)
-        if not job:
-            raise HTTPException(status_code=404, detail="Job not found")
-        return job
+def get_full_research_job(job_id: str, db: Session = Depends(get_db)):
+    run = db.get(ResearchRun, int(job_id)) if job_id.isdigit() else None
+    if not run or run.kind != "full":
+        raise HTTPException(status_code=404, detail="Job not found")
+    return _job_out(run)

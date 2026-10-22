@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { getRankings, getCategories, getWeights, getUsers } from '../api'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts'
 import Spinner from '../components/Spinner'
+import { personLabel, userScore, userWeighted } from '../utils/people'
 
 export default function Compare() {
   const [rankings, setRankings] = useState([])
@@ -35,8 +36,12 @@ export default function Compare() {
     })
   }
 
-  const husband = users.find((u) => u.name.toLowerCase() === 'husband')
-  const wife = users.find((u) => u.name.toLowerCase() === 'wife')
+  // This page compares the first two people.
+  const [personA, personB] = users
+  const labelA = personLabel(personA)
+  const labelB = personLabel(personB)
+  const scoreA = (r) => (personA ? userScore(r, personA) : 0)
+  const scoreB = (r) => (personB ? userScore(r, personB) : 0)
 
   const getWeight = (userId, catId) => {
     const w = weights.find((w) => w.user_id === userId && w.category_id === catId)
@@ -50,12 +55,13 @@ export default function Compare() {
     filteredRankings
       .map((r) => ({
         name: r.location_name,
-        husband: +(r.husband_score ?? 0).toFixed(2),
-        wife: +(r.wife_score ?? 0).toFixed(2),
-        diff: Math.abs((r.husband_score ?? 0) - (r.wife_score ?? 0)),
+        personA: +scoreA(r).toFixed(2),
+        personB: +scoreB(r).toFixed(2),
+        diff: Math.abs(scoreA(r) - scoreB(r)),
       }))
       .sort((a, b) => b.diff - a.diff),
-    [filteredRankings],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filteredRankings, personA, personB],
   )
 
   // Section 3: All locations sorted by absolute difference
@@ -63,11 +69,12 @@ export default function Compare() {
     rankings
       .map((r) => ({
         ...r,
-        diff: (r.husband_score ?? 0) - (r.wife_score ?? 0),
-        absDiff: Math.abs((r.husband_score ?? 0) - (r.wife_score ?? 0)),
+        diff: scoreA(r) - scoreB(r),
+        absDiff: Math.abs(scoreA(r) - scoreB(r)),
       }))
       .sort((a, b) => b.absDiff - a.absDiff),
-    [rankings],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rankings, personA, personB],
   )
 
   const diffRowColor = (absDiff) => {
@@ -80,7 +87,7 @@ export default function Compare() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-2">Husband vs. Wife Comparison</h1>
+      <h1 className="text-2xl font-bold mb-2">{labelA} vs. {labelB} Comparison</h1>
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 mb-4">
@@ -121,8 +128,8 @@ export default function Compare() {
               <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 12 }} />
               <Tooltip />
               <Legend />
-              <Bar dataKey="husband" fill="#10b981" name="Husband" barSize={16} />
-              <Bar dataKey="wife" fill="#f59e0b" name="Wife" barSize={16} />
+              <Bar dataKey="personA" fill="#10b981" name={labelA} barSize={16} />
+              <Bar dataKey="personB" fill="#f59e0b" name={labelB} barSize={16} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -133,8 +140,8 @@ export default function Compare() {
         <h2 className="text-lg font-semibold mb-4">Category-by-Category Breakdown</h2>
         <div className="space-y-1">
           {categories.map((cat) => {
-            const hWeight = husband ? getWeight(husband.id, cat.id) : 0
-            const wWeight = wife ? getWeight(wife.id, cat.id) : 0
+            const hWeight = personA ? getWeight(personA.id, cat.id) : 0
+            const wWeight = personB ? getWeight(personB.id, cat.id) : 0
             const weightDiff = hWeight - wWeight
             const isExpanded = expandedCategory === cat.id
 
@@ -153,7 +160,7 @@ export default function Compare() {
                     </span>
                     {weightDiff !== 0 && (
                       <span className={`text-xs ${weightDiff > 0 ? 'text-green-600' : 'text-amber-600'}`}>
-                        {weightDiff > 0 ? 'Husband cares more' : 'Wife cares more'}
+                        {weightDiff > 0 ? `${labelA} cares more` : `${labelB} cares more`}
                       </span>
                     )}
                   </div>
@@ -168,23 +175,25 @@ export default function Compare() {
                       <thead>
                         <tr className="border-b text-left text-gray-500 text-xs">
                           <th className="py-1">Location</th>
-                          <th className="py-1 text-right">H Score</th>
-                          <th className="py-1 text-right">H Weighted</th>
-                          <th className="py-1 text-right">W Score</th>
-                          <th className="py-1 text-right">W Weighted</th>
+                          <th className="py-1 text-right">{labelA} score</th>
+                          <th className="py-1 text-right">{labelA} weighted</th>
+                          <th className="py-1 text-right">{labelB} score</th>
+                          <th className="py-1 text-right">{labelB} weighted</th>
                         </tr>
                       </thead>
                       <tbody>
                         {filteredRankings.map((r) => {
                           const detail = r.details?.find((d) => d.category_name === cat.name)
                           if (!detail) return null
+                          const weightedA = personA ? userWeighted(detail, personA) : null
+                          const weightedB = personB ? userWeighted(detail, personB) : null
                           return (
                             <tr key={r.location_name} className="border-b last:border-0">
                               <td className="py-1.5 text-gray-700">{r.location_name}</td>
-                              <td className="py-1.5 text-right font-mono">{detail.husband_weighted != null ? (detail.husband_weighted / (hWeight || 1)).toFixed(1) : '—'}</td>
-                              <td className="py-1.5 text-right font-mono text-green-700">{detail.husband_weighted?.toFixed(2) ?? '—'}</td>
-                              <td className="py-1.5 text-right font-mono">{detail.wife_weighted != null ? (detail.wife_weighted / (wWeight || 1)).toFixed(1) : '—'}</td>
-                              <td className="py-1.5 text-right font-mono text-amber-700">{detail.wife_weighted?.toFixed(2) ?? '—'}</td>
+                              <td className="py-1.5 text-right font-mono">{detail.score ?? '—'}</td>
+                              <td className="py-1.5 text-right font-mono text-green-700">{weightedA?.toFixed(2) ?? '—'}</td>
+                              <td className="py-1.5 text-right font-mono">{detail.score ?? '—'}</td>
+                              <td className="py-1.5 text-right font-mono text-amber-700">{weightedB?.toFixed(2) ?? '—'}</td>
                             </tr>
                           )
                         })}
@@ -210,8 +219,8 @@ export default function Compare() {
           <thead>
             <tr className="border-b text-left text-gray-500">
               <th className="py-2">Location</th>
-              <th className="py-2 text-right">Husband</th>
-              <th className="py-2 text-right">Wife</th>
+              <th className="py-2 text-right">{labelA}</th>
+              <th className="py-2 text-right">{labelB}</th>
               <th className="py-2 text-right">Difference</th>
               <th className="py-2 text-right">Who Prefers</th>
             </tr>
@@ -220,16 +229,16 @@ export default function Compare() {
             {divergenceData.map((r) => (
               <tr key={r.location_name} className={`border-b ${diffRowColor(r.absDiff)}`}>
                 <td className="py-2 font-medium">{r.location_name}</td>
-                <td className="py-2 text-right font-mono">{(r.husband_score ?? 0).toFixed(2)}</td>
-                <td className="py-2 text-right font-mono">{(r.wife_score ?? 0).toFixed(2)}</td>
+                <td className="py-2 text-right font-mono">{scoreA(r).toFixed(2)}</td>
+                <td className="py-2 text-right font-mono">{scoreB(r).toFixed(2)}</td>
                 <td className="py-2 text-right font-mono font-bold">{(r.absDiff ?? 0).toFixed(2)}</td>
                 <td className="py-2 text-right text-xs">
                   {r.absDiff < 0.1 ? (
                     <span className="text-gray-400">Equal</span>
                   ) : r.diff > 0 ? (
-                    <span className="text-green-600">Husband</span>
+                    <span className="text-green-600">{labelA}</span>
                   ) : (
-                    <span className="text-amber-600">Wife</span>
+                    <span className="text-amber-600">{labelB}</span>
                   )}
                 </td>
               </tr>

@@ -1,11 +1,12 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from relocation.database import get_db
-from relocation.models import Score
 from relocation.schemas import ScoreCreate, ScoreOut
+from relocation.services.effective_scores import effective_scores
+from relocation.services.scores import upsert_score
 
 router = APIRouter(tags=["scores"])
 
@@ -14,39 +15,23 @@ router = APIRouter(tags=["scores"])
 def list_scores(
     location_id: Optional[int] = None,
     category_id: Optional[int] = None,
+    provider: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
-    query = db.query(Score)
-    if location_id:
-        query = query.filter(Score.location_id == location_id)
-    if category_id:
-        query = query.filter(Score.category_id == category_id)
-    return query.all()
+    """Scores per location, with country-scope categories (visa) taken from the location's country."""
+    return effective_scores(db, provider=provider, location_id=location_id, category_id=category_id)
 
 
 @router.get("/locations/{location_id}/scores", response_model=list[ScoreOut])
-def get_location_scores(location_id: int, db: Session = Depends(get_db)):
-    return db.query(Score).filter(Score.location_id == location_id).all()
+def get_location_scores(location_id: int, provider: Optional[str] = None, db: Session = Depends(get_db)):
+    return effective_scores(db, provider=provider, location_id=location_id)
 
 
 @router.post("/scores", response_model=ScoreOut, status_code=201)
-def upsert_score(data: ScoreCreate, db: Session = Depends(get_db)):
-    """Create or update a score (upsert on location_id + category_id)."""
-    existing = (
-        db.query(Score)
-        .filter_by(location_id=data.location_id, category_id=data.category_id)
-        .first()
-    )
-    if existing:
-        existing.score = data.score
-        if data.notes is not None:
-            existing.notes = data.notes
-        db.commit()
-        db.refresh(existing)
-        return existing
-    else:
-        score = Score(**data.model_dump())
-        db.add(score)
-        db.commit()
-        db.refresh(score)
-        return score
+def create_or_update_score(data: ScoreCreate, db: Session = Depends(get_db)):
+    """Create or update a score (upsert per subject + category + provider).
+
+    For a country-scope category the score is stored on the country, so it applies to
+    every location there. A score without ``method`` is a manual score.
+    """
+    return upsert_score(db, **data.model_dump())

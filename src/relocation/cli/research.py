@@ -2,7 +2,6 @@ from typing import Optional
 
 import typer
 from rich.console import Console
-from rich.table import Table
 
 from relocation.cli.helpers import resolve_category, resolve_location
 from relocation.database import SessionLocal

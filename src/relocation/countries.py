@@ -4,6 +4,8 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
+import pycountry
+
 
 @dataclass(frozen=True)
 class CountryResolution:
@@ -19,6 +21,7 @@ COUNTRY_NAME_BY_CODE = {
     "CV": "Cabo Verde",
     "CL": "Chile",
     "CO": "Colombia",
+    "CU": "Cuba",
     "CR": "Costa Rica",
     "CZ": "Czechia",
     "HR": "Croatia",
@@ -33,8 +36,11 @@ COUNTRY_NAME_BY_CODE = {
     "GY": "Guyana",
     "HN": "Honduras",
     "ID": "Indonesia",
+    "IN": "India",
     "IT": "Italy",
+    "LK": "Sri Lanka",
     "ME": "Montenegro",
+    "MG": "Madagascar",
     "MT": "Malta",
     "MU": "Mauritius",
     "MX": "Mexico",
@@ -44,8 +50,10 @@ COUNTRY_NAME_BY_CODE = {
     "PA": "Panama",
     "PE": "Peru",
     "PH": "Philippines",
+    "PR": "Puerto Rico",
     "PT": "Portugal",
     "SG": "Singapore",
+    "SI": "Slovenia",
     "ES": "Spain",
     "TH": "Thailand",
     "TT": "Trinidad and Tobago",
@@ -78,14 +86,15 @@ COUNTRY_CODE_ALIASES = {
     "wales": "GB",
 }
 
-CUSTOM_COUNTRY_NAMES = {
-    "u s territories": "US Territories",
-    "u s territory": "US Territories",
-    "united states territories": "US Territories",
-    "united states territory": "US Territories",
-    "us territories": "US Territories",
-    "us territory": "US Territories",
+# Jurisdictions that sit under another country (informational; e.g. Puerto Rico under the US).
+PARENT_COUNTRY_CODE = {
+    "PR": "US",
+    "GP": "FR",
+    "CW": "NL",
 }
+
+# Places a U.S. citizen can live without any visa or residency permit.
+US_CITIZEN_HOME_JURISDICTIONS = {"US", "PR"}
 
 
 def normalize_country_key(value: str | None) -> str:
@@ -107,10 +116,23 @@ def normalize_country_code(value: str | None) -> str | None:
 
 
 def country_name_from_code(value: str | None) -> str | None:
+    """Display name for an ISO alpha-2 code: our curated names first, then ISO 3166 (pycountry)."""
     code = normalize_country_code(value)
     if not code:
         return None
-    return COUNTRY_NAME_BY_CODE.get(code)
+    if code in COUNTRY_NAME_BY_CODE:
+        return COUNTRY_NAME_BY_CODE[code]
+    record = pycountry.countries.get(alpha_2=code)
+    if record is None:
+        return None
+    return getattr(record, "common_name", None) or record.name
+
+
+def _iso_lookup(name: str) -> str | None:
+    try:
+        return pycountry.countries.lookup(name).alpha_2
+    except LookupError:
+        return None
 
 
 def resolve_country(
@@ -139,16 +161,13 @@ def resolve_country(
         return CountryResolution(display_name=None, country_code=None)
 
     guessed_code = normalize_country_code(raw_country)
-    if guessed_code and guessed_code in COUNTRY_NAME_BY_CODE:
+    if guessed_code and len(guessed_code) == 2 and country_name_from_code(guessed_code):
         return CountryResolution(
-            display_name=COUNTRY_NAME_BY_CODE[guessed_code],
+            display_name=country_name_from_code(guessed_code),
             country_code=guessed_code,
         )
 
     normalized_country = normalize_country_key(raw_country)
-    custom_name = CUSTOM_COUNTRY_NAMES.get(normalized_country)
-    if custom_name:
-        return CountryResolution(display_name=custom_name, country_code=None)
 
     code = COUNTRY_CODE_ALIASES.get(normalized_country)
     if code:
@@ -163,6 +182,10 @@ def resolve_country(
                 display_name=canonical_name,
                 country_code=canonical_code,
             )
+
+    iso_code = _iso_lookup(raw_country)
+    if iso_code:
+        return CountryResolution(display_name=country_name_from_code(iso_code), country_code=iso_code)
 
     return CountryResolution(display_name=raw_country, country_code=None)
 

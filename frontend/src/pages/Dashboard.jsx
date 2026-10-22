@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { getRankings, getLocations, getCategories } from '../api'
+import { getRankings, getLocations, getCategories, getUsers } from '../api'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts'
 import Spinner from '../components/Spinner'
 import EmptyState from '../components/EmptyState'
 import useSortableTable from '../hooks/useSortableTable'
 import SortHeader from '../components/SortHeader'
+import { personColor, personLabel, userKey, userScore, withUserScores } from '../utils/people'
 
-function RankingsTable({ rankings, locationIdForRanking }) {
+function RankingsTable({ rankings: baseRankings, users, locationIdForRanking }) {
+  const rankings = withUserScores(baseRankings, users)
   const { sortKey, sortDirection, toggleSort, sortedData } = useSortableTable(rankings)
 
   const displayData = sortKey ? sortedData : rankings
@@ -20,8 +22,9 @@ function RankingsTable({ rankings, locationIdForRanking }) {
           <SortHeader label="Location" sortKey="location_name" currentSortKey={sortKey} sortDirection={sortDirection} onToggle={toggleSort} className="py-2" />
           <SortHeader label="Country" sortKey="country" currentSortKey={sortKey} sortDirection={sortDirection} onToggle={toggleSort} className="py-2" />
           <SortHeader label="Combined" sortKey="overall_score" currentSortKey={sortKey} sortDirection={sortDirection} onToggle={toggleSort} className="py-2 text-right" />
-          <SortHeader label="Husband" sortKey="husband_score" currentSortKey={sortKey} sortDirection={sortDirection} onToggle={toggleSort} className="py-2 text-right" />
-          <SortHeader label="Wife" sortKey="wife_score" currentSortKey={sortKey} sortDirection={sortDirection} onToggle={toggleSort} className="py-2 text-right" />
+          {users.map((u) => (
+            <SortHeader key={u.id} label={personLabel(u)} sortKey={userKey(u)} currentSortKey={sortKey} sortDirection={sortDirection} onToggle={toggleSort} className="py-2 text-right" />
+          ))}
         </tr>
       </thead>
       <tbody>
@@ -39,13 +42,14 @@ function RankingsTable({ rankings, locationIdForRanking }) {
             </td>
             <td className="py-2 text-gray-500">{r.country}</td>
             <td className="py-2 text-right font-mono">{(r.overall_score ?? 0).toFixed(2)}</td>
-            <td className="py-2 text-right font-mono">{(r.husband_score ?? 0).toFixed(2)}</td>
-            <td className="py-2 text-right font-mono">{(r.wife_score ?? 0).toFixed(2)}</td>
+            {users.map((u) => (
+              <td key={u.id} className="py-2 text-right font-mono">{userScore(r, u).toFixed(2)}</td>
+            ))}
           </tr>
         ))}
         {rankings.length === 0 && (
           <tr>
-            <td colSpan={6}>
+            <td colSpan={4 + users.length}>
               <EmptyState
                 icon="chart"
                 title="No rankings yet"
@@ -65,6 +69,7 @@ export default function Dashboard() {
   const [view, setView] = useState('combined')
   const [locations, setLocations] = useState([])
   const [categories, setCategories] = useState([])
+  const [users, setUsers] = useState([])
   const [chartType, setChartType] = useState('bar')
   const [selectedLocations, setSelectedLocations] = useState(new Set())
   const [loading, setLoading] = useState(true)
@@ -82,9 +87,10 @@ export default function Dashboard() {
   }, [view])
 
   useEffect(() => {
-    Promise.all([getLocations({ fully_scored_only: true }), getCategories()]).then(([locs, cats]) => {
+    Promise.all([getLocations({ fully_scored_only: true }), getCategories(), getUsers()]).then(([locs, cats, us]) => {
       setLocations(locs)
       setCategories(cats)
+      setUsers(us)
     }).catch((e) => setError(e.message)).finally(() => setLoading(false))
   }, [])
 
@@ -108,8 +114,7 @@ export default function Dashboard() {
   const barData = filteredRankings.map((r) => ({
     name: r.location_name,
     combined: +(r.overall_score ?? 0).toFixed(2),
-    husband: +(r.husband_score ?? 0).toFixed(2),
-    wife: +(r.wife_score ?? 0).toFixed(2),
+    ...Object.fromEntries(users.map((u) => [personLabel(u), +userScore(r, u).toFixed(2)])),
   }))
 
   const radarData = categories.map((cat) => {
@@ -161,18 +166,18 @@ export default function Dashboard() {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Rankings</h2>
           <div className="flex gap-2">
-            {['combined', 'husband', 'wife'].map((v) => (
+            {[{ value: 'combined', label: 'Combined' }, ...users.map((u) => ({ value: u.name, label: personLabel(u) }))].map((v) => (
               <button
-                key={v}
-                onClick={() => setView(v)}
-                className={`px-3 py-1 text-sm rounded ${view === v ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
+                key={v.value}
+                onClick={() => setView(v.value)}
+                className={`px-3 py-1 text-sm rounded ${view === v.value ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}
               >
-                {v.charAt(0).toUpperCase() + v.slice(1)}
+                {v.label}
               </button>
             ))}
           </div>
         </div>
-        <RankingsTable rankings={rankings} locationIdForRanking={locationIdForRanking} />
+        <RankingsTable rankings={rankings} users={users} locationIdForRanking={locationIdForRanking} />
       </div>
 
       {rankings.length > 0 && (
@@ -224,8 +229,9 @@ export default function Dashboard() {
                 <Tooltip />
                 <Legend />
                 <Bar dataKey="combined" fill="#3b82f6" />
-                <Bar dataKey="husband" fill="#10b981" />
-                <Bar dataKey="wife" fill="#f59e0b" />
+                {users.map((u, i) => (
+                  <Bar key={u.id} dataKey={personLabel(u)} fill={personColor(i)} />
+                ))}
               </BarChart>
             </ResponsiveContainer>
           ) : (
@@ -251,19 +257,20 @@ export default function Dashboard() {
         </div>
       )}
 
-      {rankings.length > 0 && (() => {
-        const withDiff = rankings.map((r) => ({ ...r, diff: (r.husband_score ?? 0) - (r.wife_score ?? 0) }))
-        const husbandHigher = [...withDiff].sort((a, b) => b.diff - a.diff).slice(0, 3).filter((r) => r.diff > 0)
-        const wifeHigher = [...withDiff].sort((a, b) => a.diff - b.diff).slice(0, 3).filter((r) => r.diff < 0)
-        const divergent = [...husbandHigher, ...wifeHigher]
-        if (divergent.length === 0) return null
+      {rankings.length > 0 && users.length >= 2 && (() => {
+        // Compares the first two people.
+        const [a, b] = users
+        const withDiff = rankings.map((r) => ({ ...r, diff: userScore(r, a) - userScore(r, b) }))
+        const aHigher = [...withDiff].sort((x, y) => y.diff - x.diff).slice(0, 3).filter((r) => r.diff > 0)
+        const bHigher = [...withDiff].sort((x, y) => x.diff - y.diff).slice(0, 3).filter((r) => r.diff < 0)
+        if (aHigher.length + bHigher.length === 0) return null
 
         const DiffRow = ({ r }) => (
           <tr className="border-b hover:bg-gray-50">
             <td className="py-2 font-medium">{r.location_name}</td>
             <td className="py-2 text-gray-500">{r.country}</td>
-            <td className="py-2 text-right font-mono">{(r.husband_score ?? 0).toFixed(2)}</td>
-            <td className="py-2 text-right font-mono">{(r.wife_score ?? 0).toFixed(2)}</td>
+            <td className="py-2 text-right font-mono">{userScore(r, a).toFixed(2)}</td>
+            <td className="py-2 text-right font-mono">{userScore(r, b).toFixed(2)}</td>
             <td className={`py-2 text-right font-mono font-bold ${r.diff > 0 ? 'text-green-600' : 'text-amber-600'}`}>
               {r.diff > 0 ? '+' : ''}{r.diff.toFixed(2)}
             </td>
@@ -278,22 +285,22 @@ export default function Dashboard() {
                 <tr className="border-b text-left text-gray-500">
                   <th className="py-2">Location</th>
                   <th className="py-2">Country</th>
-                  <th className="py-2 text-right">Husband</th>
-                  <th className="py-2 text-right">Wife</th>
+                  <th className="py-2 text-right">{personLabel(a)}</th>
+                  <th className="py-2 text-right">{personLabel(b)}</th>
                   <th className="py-2 text-right">Difference</th>
                 </tr>
               </thead>
               <tbody>
-                {husbandHigher.length > 0 && (
+                {aHigher.length > 0 && (
                   <>
-                    <tr><td colSpan={5} className="pt-3 pb-1 text-xs font-semibold text-green-700">Husband scores higher</td></tr>
-                    {husbandHigher.map((r) => <DiffRow key={r.location_name} r={r} />)}
+                    <tr><td colSpan={5} className="pt-3 pb-1 text-xs font-semibold text-green-700">{personLabel(a)} scores higher</td></tr>
+                    {aHigher.map((r) => <DiffRow key={r.location_name} r={r} />)}
                   </>
                 )}
-                {wifeHigher.length > 0 && (
+                {bHigher.length > 0 && (
                   <>
-                    <tr><td colSpan={5} className="pt-3 pb-1 text-xs font-semibold text-amber-700">Wife scores higher</td></tr>
-                    {wifeHigher.map((r) => <DiffRow key={r.location_name} r={r} />)}
+                    <tr><td colSpan={5} className="pt-3 pb-1 text-xs font-semibold text-amber-700">{personLabel(b)} scores higher</td></tr>
+                    {bHigher.map((r) => <DiffRow key={r.location_name} r={r} />)}
                   </>
                 )}
               </tbody>

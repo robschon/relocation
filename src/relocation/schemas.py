@@ -1,9 +1,11 @@
 from datetime import date, datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 VerificationStatus = Literal["verified", "needs_review", "stale"]
+ScoreMethod = Literal["manual", "llm", "derived"]
+ProviderName = Field(default="openai", pattern=r"^[a-z0-9][a-z0-9_.-]{0,31}$")
 
 
 # --- Locations ---
@@ -38,7 +40,7 @@ class LocationOut(BaseModel):
     id: int
     name: str
     country: str
-    country_code: Optional[str]
+    country_code: str
     region: Optional[str]
     latitude: Optional[float]
     longitude: Optional[float]
@@ -80,29 +82,71 @@ class LocationCandidateSearchOut(BaseModel):
 
 class CategoryOut(BaseModel):
     id: int
+    key: str
     name: str
     description: Optional[str]
     sort_order: int
+    scope: Literal["location", "country"]
+    kind: Literal["researched", "derived"]
+    needs_web: bool
+    requires_citation: bool
+    refresh_after_days: Optional[int]
 
     model_config = {"from_attributes": True}
+
+
+# --- Countries ---
+
+
+class CountryOut(BaseModel):
+    code: str
+    name: str
+    parent_code: Optional[str]
+
+    model_config = {"from_attributes": True}
+
+
+class _SubjectMixin(BaseModel):
+    """Research/scores belong to a location, or to a country for country-scope categories.
+
+    For country-scope categories a location_id is accepted and resolved to its country.
+    """
+
+    @model_validator(mode="after")
+    def _has_subject(self):
+        if getattr(self, "location_id", None) is None and getattr(self, "country_code", None) is None:
+            raise ValueError("Provide location_id or country_code.")
+        return self
 
 
 # --- Scores ---
 
 
-class ScoreCreate(BaseModel):
-    location_id: int
+class ScoreCreate(_SubjectMixin):
+    location_id: Optional[int] = None
+    country_code: Optional[str] = Field(default=None, min_length=2, max_length=2)
     category_id: int
     score: int = Field(ge=0, le=10)
     notes: Optional[str] = None
+    provider: str = ProviderName
+    # Anything not sent by a pipeline (UI sliders, CLI) is a manual score.
+    method: ScoreMethod = "manual"
+    research_id: Optional[int] = None
+    run_id: Optional[int] = None
 
 
 class ScoreOut(BaseModel):
     id: int
-    location_id: int
+    location_id: Optional[int]
     category_id: int
     score: int
     notes: Optional[str]
+    provider: str
+    method: ScoreMethod
+    scope: Literal["location", "country"] = "location"
+    country_code: Optional[str] = None
+    research_id: Optional[int]
+    run_id: Optional[int]
     created_at: datetime
     updated_at: datetime
 
@@ -132,29 +176,40 @@ class WeightOut(BaseModel):
 # --- Research ---
 
 
-class ResearchCreate(BaseModel):
-    location_id: int
+class ResearchCreate(_SubjectMixin):
+    location_id: Optional[int] = None
+    country_code: Optional[str] = Field(default=None, min_length=2, max_length=2)
     category_id: Optional[int] = None
     content: str
+    key_facts: Optional[list[dict]] = None
     source: Optional[str] = None
     source_published_at: Optional[date] = None
     source_urls: Optional[list[str]] = None
     source_checked_at: Optional[date] = None
     verification_status: VerificationStatus = "needs_review"
+    verified_by: Optional[str] = None
     confidence: Optional[float] = Field(default=None, ge=0, le=1)
+    provider: str = ProviderName
+    run_id: Optional[int] = None
 
 
 class ResearchOut(BaseModel):
     id: int
-    location_id: int
+    location_id: Optional[int]
+    country_code: Optional[str]
     category_id: Optional[int]
     content: str
+    key_facts: Optional[list[dict]] = None
     source: Optional[str]
     source_published_at: Optional[date]
     source_urls: Optional[list[str]]
     source_checked_at: Optional[date]
     verification_status: VerificationStatus
+    verified_by: Optional[str]
     confidence: Optional[float]
+    provider: str
+    run_id: Optional[int]
+    is_current: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -168,6 +223,8 @@ class ProConCreate(BaseModel):
     category_id: Optional[int] = None
     type: str = Field(pattern="^(pro|con)$")
     content: str
+    provider: str = ProviderName
+    run_id: Optional[int] = None
 
 
 class ProConOut(BaseModel):
@@ -176,6 +233,8 @@ class ProConOut(BaseModel):
     category_id: Optional[int]
     type: str
     content: str
+    provider: str
+    run_id: Optional[int]
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -198,7 +257,10 @@ class VisaCreate(BaseModel):
     source_published_at: Optional[date] = None
     source_checked_at: Optional[date] = None
     verification_status: VerificationStatus = "needs_review"
+    verified_by: Optional[str] = None
     confidence: Optional[float] = Field(default=None, ge=0, le=1)
+    provider: str = ProviderName
+    run_id: Optional[int] = None
 
 
 class VisaUpdate(BaseModel):
@@ -215,6 +277,7 @@ class VisaUpdate(BaseModel):
     source_published_at: Optional[date] = None
     source_checked_at: Optional[date] = None
     verification_status: Optional[VerificationStatus] = None
+    verified_by: Optional[str] = None
     confidence: Optional[float] = Field(default=None, ge=0, le=1)
 
 
@@ -233,6 +296,9 @@ class VisaOut(BaseModel):
     source_published_at: Optional[date]
     source_checked_at: Optional[date]
     verification_status: VerificationStatus
+    verified_by: Optional[str]
+    provider: str
+    run_id: Optional[int]
     confidence: Optional[float]
     created_at: datetime
     updated_at: datetime
@@ -264,6 +330,7 @@ class ProfileResponseOut(BaseModel):
 class UserOut(BaseModel):
     id: int
     name: str
+    display_name: str
 
     model_config = {"from_attributes": True}
 
@@ -272,20 +339,24 @@ class UserOut(BaseModel):
 
 
 class CategoryDetailOut(BaseModel):
+    category_id: int
     category_name: str
     score: int
-    husband_weight: float
-    wife_weight: float
-    husband_weighted: float
-    wife_weighted: float
+    # Keyed by user id (JSON object keys are strings).
+    weights: dict[int, float]
+    weighted: dict[int, float]
 
 
 class RankingOut(BaseModel):
+    location_id: int
     location_name: str
     country: str
     overall_score: float
-    husband_score: float
-    wife_score: float
+    # Weighted score per user, keyed by user id.
+    user_scores: dict[int, float]
+    scored_categories: int
+    total_categories: int
+    coverage: float
     details: list[CategoryDetailOut]
 
 

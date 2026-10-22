@@ -5,7 +5,7 @@ def test_seed_data_present(db_session):
     """Verify seed data was created correctly."""
     users = db_session.query(User).all()
     assert len(users) == 2
-    assert {u.name for u in users} == {"husband", "wife"}
+    assert {(u.name, u.display_name) for u in users} == {("partner_a", "Partner A"), ("partner_b", "Partner B")}
 
     categories = db_session.query(Category).all()
     assert len(categories) == 15
@@ -47,3 +47,9 @@ def test_location_cascade_delete(db_session):
     db_session.commit()
 
     assert db_session.query(Score).filter_by(location_id=loc.id).count() == 0
+
+
+def test_tests_never_use_the_real_database():
+    from relocation.config import DATA_DIR, DATABASE_URL
+
+    assert str(DATA_DIR / "relocation.db") not in DATABASE_URL

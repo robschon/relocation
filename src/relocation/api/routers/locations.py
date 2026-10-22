@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from relocation.countries import normalize_country_fields
 from relocation.database import get_db
-from relocation.models import Location
+from relocation.models import DEFAULT_PROVIDER, Location
 from relocation.schemas import (
     LocationCandidateSearchOut,
     LocationCreate,
@@ -48,11 +48,12 @@ def _find_research_doc_path(location: Location) -> Path | None:
 @router.get("/locations", response_model=list[LocationOut])
 def list_locations(
     fully_scored_only: bool = False,
+    provider: str = DEFAULT_PROVIDER,
     db: Session = Depends(get_db),
 ):
     query = db.query(Location)
     if fully_scored_only:
-        fully_scored_location_ids = get_fully_scored_location_ids(db)
+        fully_scored_location_ids = get_fully_scored_location_ids(db, provider=provider)
         if not fully_scored_location_ids:
             return []
         query = query.filter(Location.id.in_(fully_scored_location_ids))
@@ -89,6 +90,8 @@ def create_location(
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not payload["country_code"]:
+        raise HTTPException(status_code=422, detail=f"Unknown country '{data.country}'. Use a country name or ISO code.")
 
     loc = Location(**payload)
     db.add(loc)
@@ -121,6 +124,8 @@ def update_location(location_id: int, data: LocationUpdate, db: Session = Depend
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if not updates["country_code"]:
+            raise HTTPException(status_code=422, detail="Unknown country. Use a country name or ISO code.")
 
     for key, val in updates.items():
         setattr(loc, key, val)

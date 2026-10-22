@@ -68,7 +68,7 @@ def fetch_matrix(db_path: Path) -> tuple[list[Category], list[int], dict[tuple[i
     location_ids = [int(row["id"]) for row in conn.execute("SELECT id FROM locations ORDER BY id")]
     score_map = {
         (int(row["location_id"]), int(row["category_id"])): int(row["score"])
-        for row in conn.execute("SELECT location_id, category_id, score FROM scores")
+        for row in conn.execute("SELECT location_id, category_id, score FROM effective_scores WHERE provider = 'openai'")
     }
     conn.close()
     return categories, location_ids, score_map

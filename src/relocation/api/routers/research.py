@@ -4,58 +4,54 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from relocation.database import get_db
-from relocation.models import Category, Research
+from sqlalchemy import and_, or_
+
+from relocation.models import Location, Research
 from relocation.schemas import ResearchCreate, ResearchOut
+from relocation.services.effective_scores import country_category_ids
+from relocation.services.research_records import create_research as create_research_record
+from relocation.services.research_records import delete_research as delete_research_entry
 
 router = APIRouter(tags=["research"])
-STRICT_FRESHNESS_CATEGORIES = {"Visa / residency feasibility", "Tax implications"}
-
-
-def _validate_strict_research_entry(data: ResearchCreate) -> None:
-    source = (data.source or "").strip().lower()
-    if not source:
-        raise HTTPException(
-            status_code=422,
-            detail="Visa/tax research requires a source summary with dated citations.",
-        )
-    if "general knowledge" in source:
-        raise HTTPException(
-            status_code=422,
-            detail="Visa/tax research cannot use 'general knowledge' as source basis.",
-        )
-    if not data.source_urls:
-        raise HTTPException(
-            status_code=422,
-            detail="Visa/tax research requires at least one source URL.",
-        )
-    if not data.source_checked_at:
-        raise HTTPException(
-            status_code=422,
-            detail="Visa/tax research requires source_checked_at.",
-        )
-    if data.confidence is None:
-        raise HTTPException(
-            status_code=422,
-            detail="Visa/tax research requires a confidence score between 0 and 1.",
-        )
-    if data.verification_status == "stale":
-        raise HTTPException(
-            status_code=422,
-            detail="New visa/tax research cannot be created with stale verification status.",
-        )
 
 
 @router.get("/research", response_model=list[ResearchOut])
 def list_research(
     location_id: Optional[int] = None,
     category_id: Optional[int] = None,
+    provider: Optional[str] = None,
+    current_only: bool = False,
+    country_code: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
+    """List research, newest first. ``current_only`` drops superseded history rows.
+
+    With ``location_id``, country-level research for that location's country
+    (visa/residency) is included too.
+    """
     query = db.query(Research)
     if location_id:
-        query = query.filter(Research.location_id == location_id)
+        location = db.get(Location, location_id)
+        condition = Research.location_id == location_id
+        country_ids = country_category_ids(db)
+        if location is not None and country_ids:
+            condition = or_(
+                condition,
+                and_(
+                    Research.location_id.is_(None),
+                    Research.country_code == location.country_code,
+                    Research.category_id.in_(country_ids),
+                ),
+            )
+        query = query.filter(condition)
+    if country_code:
+        query = query.filter(Research.country_code == country_code.upper())
     if category_id:
         query = query.filter(Research.category_id == category_id)
+    if provider:
+        query = query.filter(Research.provider == provider)
+    if current_only:
+        query = query.filter(Research.is_current.is_(True))
     return query.order_by(Research.created_at.desc()).all()
 
 
@@ -69,18 +65,8 @@ def get_research(research_id: int, db: Session = Depends(get_db)):
 
 @router.post("/research", response_model=ResearchOut, status_code=201)
 def create_research(data: ResearchCreate, db: Session = Depends(get_db)):
-    if data.category_id:
-        category = db.get(Category, data.category_id)
-        if not category:
-            raise HTTPException(status_code=404, detail="Category not found")
-        if category.name in STRICT_FRESHNESS_CATEGORIES:
-            _validate_strict_research_entry(data)
-
-    entry = Research(**data.model_dump())
-    db.add(entry)
-    db.commit()
-    db.refresh(entry)
-    return entry
+    """Add research; for a country-scope category it is stored on the location's country."""
+    return create_research_record(db, data.model_dump())
 
 
 @router.delete("/research/{research_id}", status_code=204)
@@ -88,5 +74,4 @@ def delete_research(research_id: int, db: Session = Depends(get_db)):
     entry = db.get(Research, research_id)
     if not entry:
         raise HTTPException(404, "Research entry not found")
-    db.delete(entry)
-    db.commit()
+    delete_research_entry(db, entry)

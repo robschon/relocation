@@ -10,4 +10,4 @@ router = APIRouter(tags=["users"])
 
 @router.get("/users", response_model=list[UserOut])
 def list_users(db: Session = Depends(get_db)):
-    return db.query(User).order_by(User.name).all()
+    return db.query(User).order_by(User.id).all()

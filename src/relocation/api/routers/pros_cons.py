@@ -14,11 +14,14 @@ router = APIRouter(tags=["pros_cons"])
 def list_pros_cons(
     location_id: Optional[int] = None,
     type: Optional[str] = None,
+    provider: Optional[str] = None,
     db: Session = Depends(get_db),
 ):
     query = db.query(ProCon)
     if location_id:
         query = query.filter(ProCon.location_id == location_id)
+    if provider:
+        query = query.filter(ProCon.provider == provider)
     if type:
         query = query.filter(ProCon.type == type)
     return query.all()

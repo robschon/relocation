@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from typer.testing import CliRunner
 
-from relocation.database import Base
+from relocation.database import Base, enable_sqlite_foreign_keys
 from relocation.seed import seed_database
 
 runner = CliRunner()
@@ -25,16 +25,19 @@ _SESSION_LOCAL_TARGETS = [
     "relocation.cli.visa.SessionLocal",
     "relocation.cli.rank.SessionLocal",
     "relocation.cli.profile.SessionLocal",
+    "relocation.cli.llm_usage.SessionLocal",
 ]
 
 
 @pytest.fixture
 def cli_session():
     """Create an in-memory DB and patch SessionLocal everywhere in the CLI."""
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
+    engine = enable_sqlite_foreign_keys(
+        create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
     )
     Base.metadata.create_all(bind=engine)
     TestSession = sessionmaker(bind=engine)
@@ -175,17 +178,17 @@ def test_score_matrix(app, cli_session):
 
 
 def test_weight_set_and_list(app, cli_session):
-    result = runner.invoke(app, ["weight", "set", "husband", "cost of living", "8"])
+    result = runner.invoke(app, ["weight", "set", "partner_a", "cost of living", "8"])
     assert result.exit_code == 0
     assert "Updated" in result.output  # Already seeded at 5
 
-    result = runner.invoke(app, ["weight", "list", "--user", "husband"])
+    result = runner.invoke(app, ["weight", "list", "--user", "partner_a"])
     assert result.exit_code == 0
     assert "8" in result.output
 
 
 def test_weight_invalid_range(app, cli_session):
-    result = runner.invoke(app, ["weight", "set", "husband", "cost of living", "11"])
+    result = runner.invoke(app, ["weight", "set", "partner_a", "cost of living", "11"])
     assert result.exit_code != 0
 
 
@@ -197,8 +200,8 @@ def test_weight_invalid_user(app, cli_session):
 def test_weight_matrix(app, cli_session):
     result = runner.invoke(app, ["weight", "matrix"])
     assert result.exit_code == 0
-    assert "Husband" in result.output
-    assert "Wife" in result.output
+    assert "Partner A" in result.output
+    assert "Partner B" in result.output
 
 
 # --- Research ---
@@ -330,9 +333,9 @@ def test_rank_default(app, cli_session):
 
 def test_rank_by_user(app, cli_session):
     runner.invoke(app, ["score", "set", "Lima", "cost of living", "8"])
-    result = runner.invoke(app, ["rank", "--user", "husband"])
+    result = runner.invoke(app, ["rank", "--user", "partner_a"])
     assert result.exit_code == 0
-    assert "Husband" in result.output
+    assert "Partner A" in result.output
 
 
 def test_rank_detailed(app, cli_session):
@@ -376,8 +379,8 @@ def test_full_workflow(app, cli_session):
     runner.invoke(app, ["score", "set", "Lima", "climate", "6"])
 
     # Adjust weights
-    runner.invoke(app, ["weight", "set", "husband", "climate", "9"])
-    runner.invoke(app, ["weight", "set", "wife", "cost of living", "8"])
+    runner.invoke(app, ["weight", "set", "partner_a", "climate", "9"])
+    runner.invoke(app, ["weight", "set", "partner_b", "cost of living", "8"])
 
     # Add pros/cons
     runner.invoke(app, ["pros-cons", "add-pro", "Lisbon", "Beautiful city"])
@@ -400,3 +403,40 @@ def test_full_workflow(app, cli_session):
     assert result.exit_code == 0
     assert "Beautiful city" in result.output
     assert "Getting expensive" in result.output
+
+
+def test_llm_usage_empty(cli_session, app):
+    result = runner.invoke(app, ["llm-usage"])
+    assert result.exit_code == 0
+    assert "No LLM calls recorded yet" in result.output
+
+
+def test_llm_usage_summarizes_by_route(cli_session, app):
+    from relocation.models import LlmCall
+
+    with cli_session() as session:
+        session.add_all(
+            [
+                LlmCall(route="research", model="m", status="ok", input_tokens=1000, output_tokens=400),
+                LlmCall(route="research", model="m", status="invalid_output", input_tokens=1000),
+                LlmCall(route="score", model="m", status="ok", input_tokens=300, output_tokens=50),
+            ]
+        )
+        session.commit()
+
+    result = runner.invoke(app, ["llm-usage"])
+    assert result.exit_code == 0, result.output
+    assert "research" in result.output
+    assert "2,000" in result.output  # research input tokens
+    assert "Total" in result.output
+
+
+def test_exact_location_name_wins_over_substring_matches(cli_session):
+    from relocation.cli.helpers import resolve_location
+    from relocation.models import Location
+
+    with cli_session() as session:
+        session.add(Location(name="Limassol", country="Cyprus", country_code="CY"))
+        session.commit()
+        assert resolve_location(session, "lima").name == "Lima"
+        assert resolve_location(session, "limas").name == "Limassol"

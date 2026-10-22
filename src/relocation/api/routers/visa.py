@@ -7,31 +7,17 @@ from relocation.countries import country_matches_query, normalize_country_fields
 from relocation.database import get_db
 from relocation.models import VisaInfo
 from relocation.schemas import VisaCreate, VisaOut, VisaUpdate
+from relocation.services.visa import validate_visa_evidence
 
 router = APIRouter(tags=["visa"])
 
 
-def _validate_visa_evidence(info: VisaInfo) -> None:
-    if not info.source_urls:
-        raise HTTPException(
-            status_code=422,
-            detail="Visa entries require at least one source URL.",
-        )
-    if not info.source_checked_at:
-        raise HTTPException(
-            status_code=422,
-            detail="Visa entries require source_checked_at.",
-        )
-    if info.verification_status == "verified" and info.confidence is None:
-        raise HTTPException(
-            status_code=422,
-            detail="Verified visa entries require confidence between 0 and 1.",
-        )
-
-
 @router.get("/visa", response_model=list[VisaOut])
-def list_visa(country: Optional[str] = None, db: Session = Depends(get_db)):
-    entries = db.query(VisaInfo).order_by(VisaInfo.country, VisaInfo.visa_type).all()
+def list_visa(country: Optional[str] = None, provider: Optional[str] = None, db: Session = Depends(get_db)):
+    query = db.query(VisaInfo)
+    if provider:
+        query = query.filter(VisaInfo.provider == provider)
+    entries = query.order_by(VisaInfo.country, VisaInfo.visa_type).all()
     if not country:
         return entries
     return [
@@ -63,9 +49,11 @@ def create_visa(data: VisaCreate, db: Session = Depends(get_db)):
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not payload["country_code"]:
+        raise HTTPException(status_code=422, detail=f"Unknown country '{data.country}'. Use a country name or ISO code.")
 
     info = VisaInfo(**payload)
-    _validate_visa_evidence(info)
+    validate_visa_evidence(info)
     db.add(info)
     db.commit()
     db.refresh(info)
@@ -87,10 +75,12 @@ def update_visa(visa_id: int, data: VisaUpdate, db: Session = Depends(get_db)):
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if not updates["country_code"]:
+            raise HTTPException(status_code=422, detail="Unknown country. Use a country name or ISO code.")
 
     for key, val in updates.items():
         setattr(info, key, val)
-    _validate_visa_evidence(info)
+    validate_visa_evidence(info)
     db.commit()
     db.refresh(info)
     return info

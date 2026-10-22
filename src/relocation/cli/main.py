@@ -31,6 +31,7 @@ from relocation.cli.pros_cons import app as pros_cons_app  # noqa: E402
 from relocation.cli.visa import app as visa_app  # noqa: E402
 from relocation.cli.profile import app as profile_app  # noqa: E402
 from relocation.cli.rank import app as rank_app  # noqa: E402
+from relocation.cli.llm_usage import llm_usage  # noqa: E402
 
 app.add_typer(locations_app, name="location")
 app.add_typer(categories_app, name="category")
@@ -41,3 +42,7 @@ app.add_typer(pros_cons_app, name="pros-cons")
 app.add_typer(visa_app, name="visa")
 app.add_typer(profile_app, name="profile")
 app.add_typer(rank_app, name="rank")
+app.command("llm-usage")(llm_usage)
+from relocation.cli.pipeline import app as pipeline_app  # noqa: E402
+
+app.add_typer(pipeline_app, name="pipeline")

@@ -15,13 +15,14 @@ app = typer.Typer(help="Manage category weights per user.")
 def _resolve_user(session, name: str) -> User:
     user = session.query(User).filter(User.name.ilike(name)).first()
     if not user:
-        raise SystemExit(f"No user '{name}'. Valid users: husband, wife")
+        valid = ", ".join(u.name for u in session.query(User).order_by(User.id))
+        raise SystemExit(f"No user '{name}'. Valid users: {valid}")
     return user
 
 
 @app.command()
 def set(
-    user_name: str = typer.Argument(help="User name (husband/wife)"),
+    user_name: str = typer.Argument(help="User name (e.g. partner_a)"),
     category: str = typer.Argument(help="Category ID or name substring"),
     weight: float = typer.Argument(help="Weight (0-10)"),
 ):
@@ -84,7 +85,7 @@ def list_weights(
 def matrix():
     """Display a user x category weight matrix."""
     with SessionLocal() as session:
-        users = session.query(User).order_by(User.name).all()
+        users = session.query(User).order_by(User.id).all()
         categories = session.query(Category).order_by(Category.sort_order).all()
         weights = {
             (w.user_id, w.category_id): w.weight for w in session.query(Weight).all()
@@ -93,7 +94,7 @@ def matrix():
     table = Table(title="Weight Matrix")
     table.add_column("Category", style="bold")
     for user in users:
-        table.add_column(user.name.title(), justify="center")
+        table.add_column(user.display_name or user.name.title(), justify="center")
 
     for cat in categories:
         row = [cat.name]
