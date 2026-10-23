@@ -8,15 +8,12 @@
 
 from __future__ import annotations
 
-import subprocess
-import sys
 import time
 from datetime import date, datetime, timezone
 from typing import Callable
 
 from sqlalchemy.orm import Session
 
-from relocation.config import PROJECT_ROOT
 from relocation.database import SessionLocal
 from relocation.models import Category, Location, ProCon, Research, ResearchRun
 from relocation.pipeline.context import Profile, research_instructions
@@ -135,11 +132,14 @@ def needs_upgrade(session: Session, location: Location, provider: str = "openai"
     return stale
 
 
-def export_markdown(location_name: str) -> None:
-    subprocess.run(
-        [sys.executable, str(PROJECT_ROOT / "scripts" / "export_research_markdown.py"), location_name],
-        cwd=str(PROJECT_ROOT), check=False,
-    )
+def export_markdown(session: Session, location: Location, log: Callable[[str], None] = print) -> None:
+    """Refresh research/<slug>.md; a failed export never fails the run."""
+    from relocation.export_markdown import export_locations
+
+    try:
+        export_locations(session, [location])
+    except Exception as exc:  # noqa: BLE001
+        log(f"  [warn] Markdown export failed: {exc}")
 
 
 def run_location(
@@ -240,7 +240,7 @@ def run_location(
                 location.full_research_ran_at = datetime.now(timezone.utc)
                 session.commit()
             if write_markdown and kind == "full":
-                export_markdown(location.name)
+                export_markdown(session, location, log)
             log(
                 f"[done] researched={len(summary.researched)} rescored={len(summary.rescored)} "
                 f"skipped={len(summary.skipped)} failed={len(summary.failures)}"

@@ -101,6 +101,9 @@ def location_block(location: Location, country: Country | None) -> str:
         lines.append(f"- Jurisdiction: part of {country.parent_code}")
     if location.region:
         lines.append(f"- Region: {location.region}")
+    admin1 = getattr(location, "admin1", None)
+    if admin1 and admin1.casefold() not in (location.region or "").casefold():
+        lines.append(f"- State/province: {admin1}")
     if location.latitude is not None and location.longitude is not None:
         lines.append(f"- Coordinates: {location.latitude:.5f}, {location.longitude:.5f}")
     return "\n".join(lines)

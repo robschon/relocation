@@ -267,6 +267,7 @@ export default function Locations() {
         longitude: form.longitude ? Number(form.longitude) : null,
         population: form.population ? Number(form.population) : null,
         region: form.region || null,
+        admin1: selectedCandidate?.admin1 || null,
         description: form.description || null,
       })
       toast.success(`${form.name} added`)

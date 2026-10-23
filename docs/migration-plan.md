@@ -270,13 +270,29 @@ That's about 70% fewer output tokens per location, the expensive part. Some of t
 
 ---
 
-## Phase 5 — Markdown and cleanup (½–1 day)
+## Phase 5 — Markdown and cleanup (½–1 day) — ✅ implemented 2026-10-23 (migration `0007_location_slug_admin1`)
 
-- `locations.slug`: unique, accent-folded with `unicodedata` (e.g. `rincon-puerto-rico`, not `rinc-n-usa`). Markdown is exported on demand, named by slug.
-- The `research/` folder holds 144 files for 129 locations, with duplicates for Kailua-Kona (×3), Luquillo, Rincón, Funchal, Brooklyn, Todos Santos and Esperanza. Delete the duplicates and stop committing generated files (Decision 5).
-- `region`: add `admin1` from the geocoder (already called in `location_candidates.py`) and keep `region` as a free-text label. Fix "Madiera" and "Yucután".
-- Store timestamps as UTC with an offset, the same way everywhere.
-- Optional: cut the Typer CLI down to admin tasks (init, migrate, run pipeline, backup).
+Backfill status when Phase 5 started: 60 locations on v2, all completed with no failed runs. Average per location: ~56k input tokens (~37% cached), ~10k output, ~9 web searches.
+
+- **Slugs.** `locations.slug` is unique and accent-folded (`rincon-puerto-rico`, `alcala-spain`, `itacare-brazil`). It's built from the name plus the jurisdiction name in `countries`, so Puerto Rico places no longer end in `-usa` or `-us-territories`. A `before_flush` hook sets it for new locations and on rename. Collisions get the region, then a number, appended. `resolve_location` (CLI) also accepts a slug.
+- **Markdown.** The exporter moved into `relocation.export_markdown`. The pipeline calls it in-process after a full run, and a failed export never fails the run. It reads scores through `effective_scores()` and names files `research/<slug>.md`. `scripts/export_research_markdown.py` takes ids, names or slugs, plus `--all` and `--prune [--dry-run]`.
+  - `research/` now has exactly one file per location (129).
+  - 24 duplicate or old-name files were removed. They are still in git history.
+  - 8 files for places no longer in the database (Dubrovnik, El Cuyo, Osa Peninsula, Puerto Ángel, Punta Uva, Sail Rock, Santa Cruz, Sarandë) moved to `research/archive/`, which `--prune` ignores.
+- **Region.**
+  - `locations.admin1` is the geocoder's state/province. It is saved when a location is added from a geocoder match, shown in the research prompt when it adds something beyond `region`, and backfilled with `scripts/backfill_admin1.py [--dry-run]`. That script needs the network, so run it on the Mac.
+  - `region` stays a free-text label. "Madiera" became "Madeira", "Yucután" became "Yucatán", and whitespace was trimmed.
+- **Timestamps.** All `datetime` columns use a `UTCDateTime` type. They are stored as naive UTC, as before, so no data rewrite was needed, and they read back as aware UTC. The API now serialises them with `Z`, so browsers stop treating UTC as local time. Freshness ages are computed in UTC.
+- **Enrichment.**
+  - The ocean, swimming and beach logic moved from `scripts/` into `relocation.enrichment` (`ocean`, `swimming`, `beach`, `runner`). The scripts are now thin wrappers with the same flags.
+  - New command: `relocation pipeline enrich [LOCATION...] [-s ocean|swimming|beach] [--refresh]`. By default it fetches only missing ocean data and beach scores.
+  - Post-create enrichment runs in-process instead of starting three subprocesses. A failed ocean step skips swimming and beach.
+- Not done (optional): trimming the Typer CRUD commands. They still work and nothing depends on removing them.
+
+Still to run on the Mac (they need Open-Meteo or Overpass):
+- `uv run relocation pipeline enrich "Las Galeras" Piscadera "San Carlos Nuevo Guaymas" "Terre-de-Haut"` fills ocean data and swim scores for the 4 locations without them.
+- `uv run relocation pipeline enrich -s beach` retries the 5 beach fallbacks (Cartagena, Pipa, Icod de los vinos, Tecolutla, Amed), which still use the ocean-grid fallback.
+- `uv run python scripts/backfill_admin1.py --dry-run`, then run it without `--dry-run`.
 
 ---
 
@@ -284,9 +300,9 @@ That's about 70% fewer output tokens per location, the expensive part. Some of t
 
 1. ~~**Territories.**~~ Decided 2026-10-22: PR is its own jurisdiction (done in Phase 2). Should Puerto Rico (and other US territories) be its own jurisdiction under the US, so tax (Act 60) can differ while visa stays "none"? Recommended: yes.
 2. ~~**"Verified" flags.**~~ Decided 2026-10-22: reset (done in Phase 1). The 1,177 rows the model marked "verified" were never checked against live sources. Reset them to `needs_review`, or keep them with `verified_by='model-legacy'`? Recommended: reset.
-3. **Swim and beach scores.** Restoring the deterministic scores will change the rankings. OK to proceed, with a before/after snapshot?
+3. ~~**Swim and beach scores.**~~ Decided 2026-10-22: recompute (done in Phase 3). Restoring the deterministic scores will change the rankings. OK to proceed, with a before/after snapshot?
 4. **Superseded research.** Keep the 1,461 superseded rows as history (recommended; about 4.6M chars, small at this size) or delete them?
-5. **`research/` markdown.** Generate it on demand and stop committing it, or keep committing it as a readable snapshot?
+5. **`research/` markdown.** Generate it on demand and stop committing it, or keep committing it as a readable snapshot? *For now:* still committed, one file per location, regenerated after each full run. To stop committing it, add `research/*.md` to `.gitignore` and `git rm --cached` the files.
 6. **Web search per category.** Proposed for cost, healthcare, travel, visa and tax. Add or remove any?
 7. ~~**`provider` columns.**~~ Decided 2026-10-22: keep multi-provider (done in Phase 1). Was the multi-provider (Gemini) work abandoned? If so, Phase 1 drops the `provider` columns and `location_provider_states` and restores `UNIQUE(location_id, category_id)` on scores. If not, the models need to learn about `provider` before Phase 1.
 

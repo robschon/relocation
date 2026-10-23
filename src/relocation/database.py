@@ -1,12 +1,37 @@
-from sqlalchemy import create_engine, event
+from datetime import datetime, timezone
+
+from sqlalchemy import DateTime, create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from sqlalchemy.types import TypeDecorator
 
 from relocation.config import DATA_DIR, DATABASE_URL
 
 
+class UTCDateTime(TypeDecorator):
+    """Timestamps are stored as naive UTC (SQLite has no time zones) and read back as aware UTC.
+
+    Aware values are converted to UTC before storing; naive ones are assumed to be UTC
+    already. Reading back aware values means the API serialises them with an offset, so
+    browsers no longer mistake UTC for local time.
+    """
+
+    impl = DateTime
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if isinstance(value, datetime) and value.tzinfo is not None:
+            return value.astimezone(timezone.utc).replace(tzinfo=None)
+        return value
+
+    def process_result_value(self, value, dialect):
+        if isinstance(value, datetime):
+            return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+        return value
+
+
 class Base(DeclarativeBase):
-    pass
+    type_annotation_map = {datetime: UTCDateTime()}
 
 
 def enable_sqlite_foreign_keys(db_engine: Engine) -> Engine:

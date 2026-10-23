@@ -4,11 +4,14 @@ from relocation.models import Category, Location
 
 
 def resolve_location(session: Session, query: str) -> Location:
-    """Resolve a location by ID or case-insensitive name substring."""
+    """Resolve a location by ID, slug ("rincon-puerto-rico") or case-insensitive name substring."""
     if query.isdigit():
         loc = session.get(Location, int(query))
         if loc:
             return loc
+    by_slug = session.query(Location).filter(Location.slug == query.strip().lower()).one_or_none()
+    if by_slug:
+        return by_slug
 
     matches = (
         session.query(Location)

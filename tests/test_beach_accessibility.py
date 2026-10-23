@@ -55,13 +55,9 @@ def test_fallback_score_from_ocean_distance_km():
 
 
 def _beach_script():
-    import sys
-    from pathlib import Path
+    from relocation.enrichment import beach
 
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-    import update_beach_accessibility_scores as script
-
-    return script
+    return beach
 
 
 def test_overpass_query_uses_bounding_box_not_around():

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
 from relocation.countries import US_CITIZEN_HOME_JURISDICTIONS
 
@@ -15,7 +15,9 @@ def _age_days(stamp) -> float | None:
         when = stamp if isinstance(stamp, datetime) else datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
     except ValueError:
         return None
-    return (datetime.now() - when.replace(tzinfo=None)).total_seconds() / 86400
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - when).total_seconds() / 86400
 
 
 def evidence_age_days(entry) -> float | None:

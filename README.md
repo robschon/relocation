@@ -14,7 +14,7 @@ Relocation research workspace for comparing places to live. The repo includes:
 - `frontend`: React app for browsing locations, rankings, research jobs, and related data
 - `scripts`: research and enrichment workflows
 - `tests`: backend and script-facing tests
-- `research`: generated or curated markdown research files
+- `research`: generated markdown, one `<slug>.md` per location (`scripts/export_research_markdown.py --all --prune`); `research/archive/` holds files for removed locations
 - `docs`: supporting docs, including the CLI reference
 
 ## Getting Started
@@ -89,9 +89,14 @@ the LLM:
 
 ```bash
 uv run python scripts/preview_derived_scores.py        # see ranking changes on a copy first
-uv run python scripts/update_swimming_scores.py         # ocean temperatures (19°C, ≤60 km)
-uv run python scripts/update_beach_accessibility_scores.py   # mapped beaches (needs Overpass)
+uv run relocation pipeline enrich                       # ocean data -> swimming -> beach, missing only
+uv run relocation pipeline enrich Funchal --refresh     # refetch one location
+uv run relocation pipeline enrich -s swimming           # recompute swim scores (19°C, ≤60 km)
 ```
+
+The same steps are available as `scripts/update_ocean_temperatures.py`,
+`scripts/update_swimming_scores.py` and `scripts/update_beach_accessibility_scores.py` with
+their full set of flags. New locations with coordinates are enriched automatically.
 
 A manual score for these categories overrides the computed one.
 

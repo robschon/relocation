@@ -136,6 +136,24 @@ def backfill(
         console.print("Run the same command again to retry what's left.", style="dim")
 
 
+@app.command()
+def enrich(
+    location: Optional[list[str]] = typer.Argument(None, help="Location IDs or names (default: all)"),
+    step: Optional[list[str]] = typer.Option(None, "--step", "-s", help="ocean, swimming and/or beach (default: all three)"),
+    refresh: bool = typer.Option(False, "--refresh", help="Refetch ocean data and beach scores that already exist"),
+):
+    """Ocean temperatures -> swimming score -> beach-access score (needs Open-Meteo and Overpass)."""
+    from relocation.enrichment.runner import STEPS, enrich_locations
+
+    steps = tuple(step or STEPS)
+    unknown = sorted(set(steps) - set(STEPS))
+    if unknown:
+        raise typer.BadParameter(f"unknown step(s): {', '.join(unknown)}; choose from {', '.join(STEPS)}")
+    result = enrich_locations(_location_ids(location) if location else None, steps=steps, refresh=refresh)
+    typer.echo(f"[enrich] exit codes: {result.exit_codes}")
+    raise typer.Exit(0 if result.ok else 1)
+
+
 @app.command("smoke-test")
 def smoke_test(location: str = typer.Argument("Lima", help="Location to test with (nothing is saved)")):
     """One cheap research call with web search, to check the API accepts it. Nothing is written except usage."""

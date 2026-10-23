@@ -28,7 +28,7 @@ def file_engine(tmp_path):
 def test_fresh_database_matches_models(file_engine):
     upgrade_database(file_engine)
 
-    assert _head_revision(file_engine) == "0006_research_key_facts"
+    assert _head_revision(file_engine) == "0007_location_slug_admin1"
     with file_engine.connect() as conn:
         diffs = compare_metadata(MigrationContext.configure(conn), Base.metadata)
     assert diffs == [], f"Models and migrations disagree; write a migration: {diffs}"
@@ -37,7 +37,7 @@ def test_fresh_database_matches_models(file_engine):
 def test_upgrade_is_idempotent(file_engine):
     upgrade_database(file_engine)
     upgrade_database(file_engine)
-    assert _head_revision(file_engine) == "0006_research_key_facts"
+    assert _head_revision(file_engine) == "0007_location_slug_admin1"
 
 
 def _make_pre_alembic_database(engine) -> None:
@@ -56,7 +56,7 @@ def test_pre_alembic_database_is_stamped_and_upgraded(file_engine):
 
     tables = set(inspect(file_engine).get_table_names())
     assert {"alembic_version", "llm_calls"} <= tables
-    assert _head_revision(file_engine) == "0006_research_key_facts"
+    assert _head_revision(file_engine) == "0007_location_slug_admin1"
     with file_engine.connect() as conn:
         assert conn.execute(text("SELECT count(*) FROM categories")).scalar_one() == 1
 
@@ -65,7 +65,7 @@ def test_alembic_cli_path_adopts_pre_alembic_database(file_engine):
     """`alembic upgrade head` (not just app startup) must handle a pre-Alembic DB."""
     _make_pre_alembic_database(file_engine)
     command.upgrade(alembic_config(file_engine.url.render_as_string(hide_password=False)), "head")
-    assert _head_revision(file_engine) == "0006_research_key_facts"
+    assert _head_revision(file_engine) == "0007_location_slug_admin1"
     assert "llm_calls" in inspect(file_engine).get_table_names()
 
 

@@ -16,6 +16,7 @@ class LocationCreate(BaseModel):
     country: str
     country_code: Optional[str] = None
     region: Optional[str] = None
+    admin1: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     population: Optional[int] = None
@@ -28,6 +29,7 @@ class LocationUpdate(BaseModel):
     country: Optional[str] = None
     country_code: Optional[str] = None
     region: Optional[str] = None
+    admin1: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     population: Optional[int] = None
@@ -41,7 +43,9 @@ class LocationOut(BaseModel):
     name: str
     country: str
     country_code: str
+    slug: Optional[str] = None
     region: Optional[str]
+    admin1: Optional[str] = None
     latitude: Optional[float]
     longitude: Optional[float]
     population: Optional[int]

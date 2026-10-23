@@ -78,13 +78,20 @@ class Country(Base):
 
 class Location(Base):
     __tablename__ = "locations"
-    __table_args__ = (UniqueConstraint("name", "country", name="uq_location_name_country"),)
+    __table_args__ = (
+        UniqueConstraint("name", "country", name="uq_location_name_country"),
+        Index("uq_locations_slug", "slug", unique=True),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     country: Mapped[str] = mapped_column(String(100), nullable=False)
     country_code: Mapped[str] = mapped_column(ForeignKey("countries.code"), nullable=False)
+    # Free-text display label ("Hawaii, the Big Island"); admin1 is the geocoder's state/province.
     region: Mapped[str | None] = mapped_column(String(100))
+    admin1: Mapped[str | None] = mapped_column(String(100))
+    # Stable, accent-folded identifier ("rincon-puerto-rico"); set automatically on flush.
+    slug: Mapped[str | None] = mapped_column(String(240))
     latitude: Mapped[float | None] = mapped_column(Float)
     longitude: Mapped[float | None] = mapped_column(Float)
     population: Mapped[int | None] = mapped_column(Integer)
@@ -482,6 +489,7 @@ def _ensure_country_rows(session: Session, _flush_context, _instances) -> None:
             codes.add(obj.country_code)
     pending = {obj.code for obj in session.new if isinstance(obj, Country)}
     codes -= pending
+    _assign_location_slugs(session)
     if not codes:
         return
     with session.no_autoflush:
@@ -500,3 +508,45 @@ def _ensure_country_rows(session: Session, _flush_context, _instances) -> None:
                     )
                 )
                 pending.add(item)
+
+
+def _assign_location_slugs(session: Session) -> None:
+    """Give new locations, and ones whose name or country changed, a unique slug."""
+    from sqlalchemy import inspect as sa_inspect, select
+
+    from relocation.countries import country_name_from_code
+    from relocation.slugs import location_slug, slugify
+
+    targets = [obj for obj in session.new if isinstance(obj, Location)]
+    for obj in session.dirty:
+        if isinstance(obj, Location):
+            state = sa_inspect(obj)
+            if not obj.slug or any(state.attrs[name].history.has_changes() for name in ("name", "country", "country_code")):
+                targets.append(obj)
+    if not targets:
+        return
+    claimed = {obj.slug for obj in session.new if isinstance(obj, Location) and obj.slug and obj not in targets}
+    with session.no_autoflush:
+        for obj in targets:
+            country = session.get(Country, obj.country_code) if obj.country_code else None
+            country_name = country.name if country else (country_name_from_code(obj.country_code) or obj.country)
+            base = location_slug(obj.name, country_name)
+            if obj.slug == base:
+                claimed.add(base)
+                continue
+
+            def taken(candidate: str, current=obj) -> bool:
+                if candidate in claimed:
+                    return True
+                other = session.execute(select(Location.id).where(Location.slug == candidate)).scalar()
+                return other is not None and other != current.id
+
+            slug = base
+            if taken(slug) and obj.region:
+                slug = f"{base}-{slugify(obj.region)}"
+            suffix = 2
+            while taken(slug):
+                slug = f"{base}-{suffix}"
+                suffix += 1
+            obj.slug = slug
+            claimed.add(slug)
