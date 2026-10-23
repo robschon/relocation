@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from relocation.database import get_db
 from relocation.schemas import ScoreCreate, ScoreOut
 from relocation.services.effective_scores import effective_scores
+from relocation.services.research_versions import current_research_location_ids
 from relocation.services.scores import upsert_score
 
 router = APIRouter(tags=["scores"])
@@ -16,10 +17,15 @@ def list_scores(
     location_id: Optional[int] = None,
     category_id: Optional[int] = None,
     provider: Optional[str] = None,
+    current_research_only: bool = False,
     db: Session = Depends(get_db),
 ):
     """Scores per location, with country-scope categories (visa) taken from the location's country."""
-    return effective_scores(db, provider=provider, location_id=location_id, category_id=category_id)
+    rows = effective_scores(db, provider=provider, location_id=location_id, category_id=category_id)
+    if current_research_only:
+        current = current_research_location_ids(db)
+        rows = [r for r in rows if r.location_id in current]
+    return rows
 
 
 @router.get("/locations/{location_id}/scores", response_model=list[ScoreOut])

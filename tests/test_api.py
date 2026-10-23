@@ -685,3 +685,47 @@ def test_llm_scores_for_derived_categories_are_rejected(client):
     # A manual override is allowed.
     ok = client.post("/api/v1/scores", json={"location_id": loc_id, "category_id": swim["id"], "score": 5})
     assert ok.status_code == 201
+
+
+# --- Hiding locations whose research is from an older pipeline version ---
+
+
+def _make_current(db_session, location_name):
+    """Give a location current-version research for every researched category."""
+    from relocation.models import Category, Location, Research, ResearchRun
+    from relocation.settings import get_settings
+
+    loc = db_session.query(Location).filter_by(name=location_name).one()
+    run = ResearchRun(kind="full", status="completed", location_id=loc.id, prompt_version=get_settings().prompt_version)
+    db_session.add(run)
+    db_session.flush()
+    for cat in db_session.query(Category).filter_by(kind="researched"):
+        subject = {"country_code": loc.country_code} if cat.scope == "country" else {"location_id": loc.id}
+        db_session.add(Research(category_id=cat.id, content="v2", run_id=run.id, is_current=True, **subject))
+    db_session.commit()
+    return loc
+
+
+def test_locations_flag_and_filter_current_research(client, db_session):
+    lima = _make_current(db_session, "Lima")
+
+    every = client.get("/api/v1/locations").json()
+    assert {loc["name"]: loc["research_current"] for loc in every}["Lima"] is True
+    assert sum(loc["research_current"] for loc in every) == 1
+
+    current = client.get("/api/v1/locations?current_research_only=true").json()
+    assert [loc["name"] for loc in current] == ["Lima"]
+    assert client.get(f"/api/v1/locations/{lima.id}").json()["research_current"] is True
+
+
+def test_rankings_and_scores_filter_current_research(client, db_session):
+    lima = _make_current(db_session, "Lima")
+    food = next(c for c in client.get("/api/v1/categories").json() if c["key"] == "food")
+    for loc in client.get("/api/v1/locations").json():
+        client.post("/api/v1/scores", json={"location_id": loc["id"], "category_id": food["id"], "score": 6})
+
+    ranked = client.get("/api/v1/rankings?current_research_only=true").json()
+    assert [r["location_id"] for r in ranked] == [lima.id]
+    scores = client.get("/api/v1/scores?current_research_only=true").json()
+    assert {s["location_id"] for s in scores} == {lima.id}
+    assert len({s["location_id"] for s in client.get("/api/v1/scores").json()}) > 1

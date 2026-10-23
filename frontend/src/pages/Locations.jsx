@@ -172,8 +172,9 @@ export default function Locations() {
 
   const load = async () => {
     const [locs, rankings] = await Promise.all([
-      getLocations({ fully_scored_only: false }),
-      getRankings('combined', { fully_scored_only: false }),
+      // This page manages every location, including ones still on older research.
+      getLocations({ fully_scored_only: false, current_research_only: false }),
+      getRankings('combined', { fully_scored_only: false, current_research_only: false }),
     ])
     const sorted = sortLocationsByOverallRank(locs, rankings)
     setLocations(
@@ -528,6 +529,14 @@ export default function Locations() {
                         title={`Last full research run: ${fullResearchTitle}`}
                       >
                         Full research {fullResearchBadge}
+                      </div>
+                    )}
+                    {!loc.research_current && (
+                      <div
+                        className="mt-2 ml-1 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700"
+                        title="Some research comes from the older pipeline; hidden on the analysis pages until upgraded (relocation pipeline backfill)."
+                      >
+                        Older research
                       </div>
                     )}
                   </div>

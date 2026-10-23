@@ -48,6 +48,8 @@ class LocationOut(BaseModel):
     description: Optional[str]
     notes: Optional[str]
     full_research_ran_at: Optional[datetime]
+    # True when every researched category comes from the current pipeline prompt version.
+    research_current: bool = False
     created_at: datetime
     updated_at: datetime
 

@@ -15,9 +15,29 @@ async function request(url, options = {}) {
   return res.json()
 }
 
+// Hide locations whose research comes from an older pipeline version (default on).
+// Stored per browser; pages that manage locations pass current_research_only: false.
+const HIDE_OLDER_KEY = 'relocation.hideOlderResearch'
+export const hideOlderResearch = () => {
+  try {
+    return localStorage.getItem(HIDE_OLDER_KEY) !== '0'
+  } catch {
+    return true
+  }
+}
+export const setHideOlderResearch = (hide) => {
+  try {
+    localStorage.setItem(HIDE_OLDER_KEY, hide ? '1' : '0')
+  } catch {
+    // storage unavailable: the default (hide) applies
+  }
+}
+const withResearchFilter = (params) =>
+  'current_research_only' in params || !hideOlderResearch() ? params : { ...params, current_research_only: true }
+
 // Locations
 export const getLocations = (params = {}) => {
-  const qs = new URLSearchParams(params).toString()
+  const qs = new URLSearchParams(withResearchFilter(params)).toString()
   return request(`${BASE}/locations${qs ? '?' + qs : ''}`)
 }
 export const getLocation = (id) => request(`${BASE}/locations/${id}`)
@@ -41,7 +61,7 @@ export const getCategories = () => request(`${BASE}/categories`)
 
 // Scores
 export const getScores = (params = {}) => {
-  const qs = new URLSearchParams(params).toString()
+  const qs = new URLSearchParams(withResearchFilter(params)).toString()
   return request(`${BASE}/scores${qs ? '?' + qs : ''}`)
 }
 export const getLocationScores = (locationId) => request(`${BASE}/locations/${locationId}/scores`)
@@ -104,6 +124,6 @@ export const getUsers = () => request(`${BASE}/users`)
 
 // Rankings
 export const getRankings = (user = 'combined', params = {}) => {
-  const qs = new URLSearchParams({ user, ...params }).toString()
+  const qs = new URLSearchParams({ user, ...withResearchFilter(params) }).toString()
   return request(`${BASE}/rankings?${qs}`)
 }

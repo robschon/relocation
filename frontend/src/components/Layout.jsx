@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { hideOlderResearch, setHideOlderResearch } from '../api'
 
 const navGroups = [
   {
@@ -45,7 +46,14 @@ const navGroups = [
 
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [hideOlder, setHideOlder] = useState(hideOlderResearch)
   const location = useLocation()
+
+  const toggleHideOlder = () => {
+    setHideOlderResearch(!hideOlder)
+    setHideOlder(!hideOlder)
+    window.location.reload() // every page re-fetches with the new filter
+  }
 
   const handleNavClick = () => {
     setSidebarOpen(false)
@@ -113,6 +121,13 @@ export default function Layout() {
             </li>
           ))}
         </ul>
+        <label
+          className="mx-4 mt-6 mb-4 flex cursor-pointer items-start gap-2 text-xs text-gray-400"
+          title="Hide places whose research hasn't been upgraded to the current pipeline yet. The Locations page always shows everything."
+        >
+          <input type="checkbox" className="mt-0.5" checked={hideOlder} onChange={toggleHideOlder} />
+          <span>Only places with current research</span>
+        </label>
       </nav>
 
       {/* Main content */}

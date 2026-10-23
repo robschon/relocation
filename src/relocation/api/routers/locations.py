@@ -18,6 +18,7 @@ from relocation.schemas import (
 )
 from relocation.services.location_candidates import search_location_candidates
 from relocation.services.new_location_enrichment import run_location_post_create_pipeline
+from relocation.services.research_versions import current_research_location_ids
 from relocation.services.scoring import get_fully_scored_location_ids
 
 router = APIRouter(tags=["locations"])
@@ -45,19 +46,31 @@ def _find_research_doc_path(location: Location) -> Path | None:
     return matches[0] if matches else None
 
 
+def _with_research_flag(db: Session, locations: list[Location]) -> list[Location]:
+    current = current_research_location_ids(db)
+    for loc in locations:
+        loc.research_current = loc.id in current  # read by LocationOut
+    return locations
+
+
 @router.get("/locations", response_model=list[LocationOut])
 def list_locations(
     fully_scored_only: bool = False,
+    current_research_only: bool = False,
     provider: str = DEFAULT_PROVIDER,
     db: Session = Depends(get_db),
 ):
+    """List locations. current_research_only hides locations with research from an older pipeline version."""
     query = db.query(Location)
     if fully_scored_only:
         fully_scored_location_ids = get_fully_scored_location_ids(db, provider=provider)
         if not fully_scored_location_ids:
             return []
         query = query.filter(Location.id.in_(fully_scored_location_ids))
-    return query.order_by(Location.name).all()
+    locations = _with_research_flag(db, query.order_by(Location.name).all())
+    if current_research_only:
+        locations = [loc for loc in locations if loc.research_current]
+    return locations
 
 
 @router.get("/location-candidates", response_model=LocationCandidateSearchOut)
@@ -73,7 +86,7 @@ def get_location(location_id: int, db: Session = Depends(get_db)):
     loc = db.get(Location, location_id)
     if not loc:
         raise HTTPException(404, "Location not found")
-    return loc
+    return _with_research_flag(db, [loc])[0]
 
 
 @router.post("/locations", response_model=LocationOut, status_code=201)

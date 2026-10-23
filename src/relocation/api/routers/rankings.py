@@ -7,6 +7,7 @@ from relocation.database import get_db
 from relocation.models import DEFAULT_PROVIDER
 from relocation.schemas import RankingOut
 from relocation.services.ranking import compute_rankings
+from relocation.services.research_versions import current_research_location_ids
 
 router = APIRouter(tags=["rankings"])
 
@@ -17,6 +18,7 @@ def get_rankings(
     fully_scored_only: bool = False,
     provider: str = DEFAULT_PROVIDER,
     user_ids: Optional[list[int]] = Query(default=None),
+    current_research_only: bool = False,
     db: Session = Depends(get_db),
 ):
     """
@@ -34,6 +36,9 @@ def get_rankings(
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if current_research_only:
+        current = current_research_location_ids(db)
+        rankings = [r for r in rankings if r.location_id in current]
     return [
         RankingOut(
             location_id=r.location_id,

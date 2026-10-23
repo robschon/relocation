@@ -73,42 +73,56 @@ def rescore(
 def backfill(
     location: Optional[list[str]] = typer.Option(None, "--location", "-l", help="Only these locations (default: all)"),
     limit: Optional[int] = typer.Option(None, "--limit", help="Stop after this many locations"),
+    top_percent: Optional[float] = typer.Option(
+        None, "--top-percent", min=1, max=100,
+        help="Only the top N%% of all locations by current combined rank (e.g. 75 skips the bottom quarter)",
+    ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be upgraded, make no calls"),
     flex: bool = typer.Option(False, "--flex", help="Cheaper, slower service tier (recommended)"),
 ):
-    """Upgrade every location to the current prompt version, one location at a time.
+    """Upgrade locations to the current prompt version, best-ranked first.
 
-    Only evidence from an older prompt version is redone; country-level visa research
-    happens once per country. Safe to stop (Ctrl-C) and run again: finished locations
-    are skipped without any calls.
+    Order is the current combined ranking, taken when the backfill starts. Only evidence
+    from an older prompt version is redone; country-level visa research happens once per
+    country. Safe to stop (Ctrl-C) and run again: finished locations are skipped without
+    any calls.
     """
     from relocation.models import Location
     from relocation.pipeline.runner import needs_upgrade, run_location
+    from relocation.services.ranking import compute_rankings
     from relocation.settings import get_settings
 
     _flex(flex)
-    ids = _location_ids(location) if location else None
+    chosen = set(_location_ids(location)) if location else None
     with SessionLocal() as session:
-        if ids is None:
-            ids = [loc_id for (loc_id,) in session.query(Location.id).order_by(Location.id)]
+        ranked = [r.location_id for r in compute_rankings(session)]
+        unranked = [i for (i,) in session.query(Location.id).order_by(Location.id) if i not in set(ranked)]
+        order = ranked + unranked
+        rank_of = {loc_id: n for n, loc_id in enumerate(order, 1)}
+        if top_percent is not None:
+            keep = max(1, round(len(order) * top_percent / 100))
+            order = order[:keep]
+        if chosen is not None:
+            order = [i for i in order if i in chosen]
         todo = []
-        for loc_id in ids:
+        for loc_id in order:
             loc = session.get(Location, loc_id)
             stale = needs_upgrade(session, loc)
             if stale:
                 todo.append((loc_id, loc.name, len(stale)))
     version = get_settings().prompt_version
-    console.print(f"{len(todo)} of {len(ids)} locations need upgrading to prompt version {version}.")
+    scope = f"top {top_percent:g}% ({len(order)} locations)" if top_percent is not None else f"{len(order)} locations"
+    console.print(f"{len(todo)} of {scope} need upgrading to prompt version {version}, best-ranked first.")
     if limit is not None:
         todo = todo[:limit]
     if dry_run:
-        for _, name, count in todo:
-            console.print(f"  {name}: {count} categor{'y' if count == 1 else 'ies'}")
+        for loc_id, name, count in todo:
+            console.print(f"  #{rank_of[loc_id]:>3} {name}: {count} categor{'y' if count == 1 else 'ies'}")
         return
 
     failed = []
     for n, (loc_id, name, _) in enumerate(todo, 1):
-        console.rule(f"[{n}/{len(todo)}] {name}")
+        console.rule(f"[{n}/{len(todo)}] #{rank_of[loc_id]} {name}")
         try:
             summary = run_location(loc_id, upgrade_versions=True, kind="full")
             if summary.failures:
