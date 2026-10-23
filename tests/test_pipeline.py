@@ -348,3 +348,34 @@ def test_upgrade_redoes_old_version_evidence_once_per_country(pipeline_env):
     # Peru's visa research is already v2, so Cusco doesn't redo it
     assert not any(c["text_format"] is schemas.VisaEvidenceResponse for c in env.fake.calls)
     assert not needs_upgrade(s, cusco)
+
+
+def _visa_calls(env):
+    return [c for c in env.fake.calls if c.get("text_format") in (schemas.VisaResponse, schemas.VisaEvidenceResponse)]
+
+
+def test_new_location_reuses_current_country_visa_even_when_forced(pipeline_env):
+    """The frontend's "Full research" button forces; that must not redo a country's current visa work."""
+    env = pipeline_env
+    _run(env)
+    assert len(_visa_calls(env)) == 1
+    s = env.session
+    s.add(Location(name="Cusco", country="Peru", country_code="PE"))
+    s.commit()
+    cusco = s.query(Location).filter_by(name="Cusco").one()
+    visa_rows_before = [v.id for v in s.query(VisaInfo).filter_by(country_code="PE")]
+
+    for force in (False, True):
+        lines = []
+        summary = run_location(cusco.id, force=force, session_factory=env.Session, llm=env.make_llm(),
+                               log=lines.append, write_markdown=False, skip_synthesis=True)
+        visa_lines = [line for line in lines if "isa" in line]
+        assert "Visa / residency feasibility" not in summary.researched, (force, visa_lines)
+        assert not summary.visa_refreshed, (force, visa_lines)
+    assert len(_visa_calls(env)) == 1
+    s.expire_all()
+    assert [v.id for v in s.query(VisaInfo).filter_by(country_code="PE")] == visa_rows_before
+
+    run_location(cusco.id, force=True, force_country=True, session_factory=env.Session, llm=env.make_llm(),
+                 log=lambda line: None, write_markdown=False, skip_synthesis=True)
+    assert len(_visa_calls(env)) == 2

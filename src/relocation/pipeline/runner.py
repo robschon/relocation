@@ -146,6 +146,7 @@ def run_location(
     location_id: int,
     *,
     force: bool = False,
+    force_country: bool = False,
     category_keys: list[str] | None = None,
     skip_visa: bool = False,
     skip_synthesis: bool = False,
@@ -160,6 +161,10 @@ def run_location(
     upgrade_versions: bool = False,
 ) -> RunSummary:
     """Research what's missing or stale (or everything, with force).
+
+    force redoes this location's own research. Country-level work (visa research and visa
+    pathways) is shared by every location in the country, so it is reused while current
+    unless force_country is also set.
 
     upgrade_versions: also redo evidence produced by an older prompt version (used by the backfill).
     """
@@ -185,7 +190,8 @@ def run_location(
                     log(f"  [skip] {category.name} (computed from data)")
                     continue
                 existing = current.get(category.id)
-                refresh, reason = research_decision(category.refresh_after_days, existing, force)
+                forced = force and (category.scope != "country" or force_country)
+                refresh, reason = research_decision(category.refresh_after_days, existing, forced)
                 if not refresh and upgrade_versions and versions.get(existing.id) != ctx.settings.prompt_version:
                     refresh, reason = True, f"from prompt version {versions.get(existing.id) or 'unknown'}"
                 try:
@@ -214,7 +220,7 @@ def run_location(
                 try:
                     # Skip if the visa research call in this run already stored fresh pathways.
                     summary.visa_refreshed = visa_researched or refresh_visa_info(
-                        ctx, session, location, force=force and not visa_researched
+                        ctx, session, location, force=force_country and not visa_researched
                     )
                 except (LlmCallFailed, ValidationFailed) as exc:
                     session.rollback()

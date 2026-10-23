@@ -109,3 +109,14 @@ def test_api_serialises_timestamps_with_offset(client, db_session):
     body = client.get("/api/v1/locations", params={"current_research_only": False}).json()
     created = next(item for item in body if item["name"] == "Testville")["created_at"]
     assert created.endswith("Z") or created.endswith("+00:00")
+
+
+def test_research_markdown_endpoint_builds_from_db(client, db_session):
+    loc = Location(name="Rincón", country="Puerto Rico", country_code="PR")
+    other = Location(name="Rincón Viejo", country="Puerto Rico", country_code="PR")
+    db_session.add_all([loc, other])
+    db_session.commit()
+    response = client.get(f"/api/v1/locations/{loc.id}/research-markdown")
+    assert response.status_code == 200
+    assert response.text.startswith("# Rincón (Puerto Rico)")
+    assert client.get("/api/v1/locations/999999/research-markdown").status_code == 404

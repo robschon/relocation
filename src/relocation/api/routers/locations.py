@@ -1,6 +1,3 @@
-import re
-from pathlib import Path
-
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
@@ -9,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from relocation.countries import normalize_country_fields
 from relocation.database import get_db
+from relocation.export_markdown import build_markdown
 from relocation.models import DEFAULT_PROVIDER, Location
 from relocation.schemas import (
     LocationCandidateSearchOut,
@@ -22,30 +20,6 @@ from relocation.services.research_versions import current_research_location_ids
 from relocation.services.scoring import get_fully_scored_location_ids
 
 router = APIRouter(tags=["locations"])
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
-RESEARCH_DIR = PROJECT_ROOT / "research"
-
-
-def _slugify(value: str) -> str:
-    text = value.lower()
-    text = re.sub(r"[^a-z0-9]+", "-", text)
-    return re.sub(r"-+", "-", text).strip("-")
-
-
-def _find_research_doc_path(location: Location) -> Path | None:
-    primary = RESEARCH_DIR / f"{_slugify(location.name)}-{_slugify(location.country)}.md"
-    if primary.exists():
-        return primary
-
-    prefix = f"{_slugify(location.name)}-"
-    matches = sorted(
-        RESEARCH_DIR.glob(f"{prefix}*.md"),
-        key=lambda path: path.stat().st_mtime,
-        reverse=True,
-    )
-    return matches[0] if matches else None
-
-
 def _with_research_flag(db: Session, locations: list[Location]) -> list[Location]:
     current = current_research_location_ids(db)
     for loc in locations:
@@ -161,11 +135,6 @@ def export_location_research_markdown(location_id: int, db: Session = Depends(ge
     loc = db.get(Location, location_id)
     if not loc:
         raise HTTPException(404, "Location not found")
-    doc_path = _find_research_doc_path(loc)
-    if not doc_path:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Research markdown file not found for {loc.name} ({loc.country}).",
-        )
-
-    return doc_path.read_text(encoding="utf-8")
+    # Built from the database, so it is always current and never depends on research/*.md filenames.
+    _path, content = build_markdown(db, loc)
+    return content

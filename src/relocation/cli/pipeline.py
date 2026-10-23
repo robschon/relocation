@@ -34,7 +34,8 @@ def _location_ids(names: list[str]) -> list[int]:
 @app.command()
 def run(
     location: str = typer.Argument(help="Location ID or name"),
-    force: bool = typer.Option(False, "--force", help="Redo every researched category and visa info"),
+    force: bool = typer.Option(False, "--force", help="Redo this location's research (country visa work is reused while current)"),
+    force_country: bool = typer.Option(False, "--force-country", help="Also redo the country's visa research and pathways"),
     category: Optional[list[str]] = typer.Option(None, "--category", "-c", help="Only these categories (key or name part)"),
     skip_visa: bool = typer.Option(False, "--skip-visa"),
     skip_synthesis: bool = typer.Option(False, "--skip-synthesis", help="Skip pros/cons and description"),
@@ -46,7 +47,7 @@ def run(
 
     _flex(flex)
     (location_id,) = _location_ids([location])
-    summary = run_location(location_id, force=force, category_keys=category, skip_visa=skip_visa,
+    summary = run_location(location_id, force=force, force_country=force_country, category_keys=category, skip_visa=skip_visa,
                            skip_synthesis=skip_synthesis, force_description=force_description,
                            kind="category" if category else "full")
     if summary.failures:

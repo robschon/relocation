@@ -349,7 +349,7 @@ def test_start_full_research_creates_queued_run(client, db_session, monkeypatch)
     assert body["status"] == "queued"
     run = db_session.get(ResearchRun, int(body["id"]))
     assert (run.kind, run.status, run.provider, run.prompt_version) == ("full", "queued", "openai", "v1")
-    assert calls["args"] == (run.id, loc_id, False)
+    assert calls["args"] == (run.id, loc_id, False, False)
     assert calls["started"] is True
 
 
@@ -412,7 +412,7 @@ def test_full_research_job_runs_pipeline_in_process(db_session, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     seen = {}
 
-    def fake_run_location(location_id, *, force, run_id, kind, log):
+    def fake_run_location(location_id, *, force, force_country, run_id, kind, log):
         seen.update(location_id=location_id, force=force, run_id=run_id, kind=kind)
         assert isinstance(log, runner.RunLog)
         log("[step] Research: Food scene")

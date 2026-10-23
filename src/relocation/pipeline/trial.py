@@ -64,7 +64,7 @@ def run_trial(location_ids: list[int], *, force: bool = True, trial_path: Path |
     for location_id in location_ids:
         llm = LlmClient(recorder=recorder)
         log = RunLog(session_factory=TrialSession)
-        run_location(location_id, force=force, category_keys=category_keys,
+        run_location(location_id, force=force, force_country=force, category_keys=category_keys,
                      kind="category" if category_keys else "full", session_factory=TrialSession, llm=llm, log=log,
                      write_markdown=False)
     return path

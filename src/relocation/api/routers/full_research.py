@@ -87,7 +87,7 @@ def _ensure_openai_key() -> bool:
     return bool(os.environ.get("OPENAI_API_KEY"))
 
 
-def _run_full_research_job(run_id: int, location_id: int, force_research: bool) -> None:
+def _run_full_research_job(run_id: int, location_id: int, force_research: bool, force_country: bool = False) -> None:
     """Runs in a worker thread inside the backend process (no subprocess, no HTTP back to ourselves)."""
     if not _ensure_openai_key():
         finish_run(
@@ -100,7 +100,7 @@ def _run_full_research_job(run_id: int, location_id: int, force_research: bool) 
         return
     log = RunLog(run_id=run_id, session_factory=SessionLocal, echo=False)
     try:
-        run_location(location_id, force=force_research, run_id=run_id, kind="full", log=log)
+        run_location(location_id, force=force_research, force_country=force_country, run_id=run_id, kind="full", log=log)
     except Exception:  # run_location already marked the run failed with the error
         pass
 
@@ -109,8 +109,11 @@ def _run_full_research_job(run_id: int, location_id: int, force_research: bool) 
 def start_full_research(
     location_id: int,
     force_research: bool = False,
+    force_country: bool = False,
     db: Session = Depends(get_db),
 ):
+    """force_research redoes this location's research; country visa work is reused while current
+    unless force_country is set too."""
     location = db.get(Location, location_id)
     if not location:
         raise HTTPException(status_code=404, detail="Location not found")
@@ -140,7 +143,7 @@ def start_full_research(
 
     thread = threading.Thread(
         target=_run_full_research_job,
-        args=(run.id, location.id, force_research),
+        args=(run.id, location.id, force_research, force_country),
         daemon=True,
     )
     thread.start()
