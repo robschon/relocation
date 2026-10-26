@@ -340,7 +340,8 @@ def test_rank_by_user(app, cli_session):
 
 def test_rank_detailed(app, cli_session):
     runner.invoke(app, ["score", "set", "Lima", "cost of living", "8"])
-    result = runner.invoke(app, ["rank", "--detailed"])
+    # Wide terminal so Rich does not truncate category names next to the per-person columns.
+    result = runner.invoke(app, ["rank", "--detailed"], env={"COLUMNS": "200"})
     assert result.exit_code == 0
     assert "Cost of living" in result.output
 
@@ -393,7 +394,8 @@ def test_full_workflow(app, cli_session):
     runner.invoke(app, ["visa", "add", "Portugal", "D7 Visa", "--desc", "Passive income visa"])
 
     # Check rankings
-    result = runner.invoke(app, ["rank", "--detailed"])
+    # Wide terminal so Rich does not truncate category names next to the per-person columns.
+    result = runner.invoke(app, ["rank", "--detailed"], env={"COLUMNS": "200"})
     assert result.exit_code == 0
     assert "Lisbon" in result.output
     assert "Lima" in result.output

@@ -149,8 +149,9 @@ def seed_database(session: Session) -> dict[str, int]:
     """Seed the database with initial data. Returns counts of created items."""
     counts = {"users": 0, "categories": 0, "locations": 0, "weights": 0}
 
-    # Users
-    for name, display_name in SEED_USERS:
+    # Users: only seed an empty table, so a database whose people were renamed
+    # doesn't get the defaults added alongside them.
+    for name, display_name in SEED_USERS if not session.query(User).first() else []:
         if not session.query(User).filter_by(name=name).first():
             session.add(User(name=name, display_name=display_name))
             counts["users"] += 1
