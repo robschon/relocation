@@ -32,3 +32,7 @@ data/backups/
 
 # Pipeline trial databases
 data/trials/
+
+# Personal research and anything derived from it (kept local only)
+research/
+data/reports/
