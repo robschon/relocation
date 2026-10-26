@@ -7,60 +7,133 @@ import EmptyState from '../components/EmptyState'
 import useSortableTable from '../hooks/useSortableTable'
 import SortHeader from '../components/SortHeader'
 import { personColor, personLabel, userKey, userScore, withUserScores } from '../utils/people'
+import { GROUP_MODES, groupRankings } from '../utils/grouping'
 
-function RankingsTable({ rankings: baseRankings, users, locationIdForRanking }) {
+const GROUP_MODE_STORAGE_KEY = 'dashboard.groupMode'
+
+function loadGroupMode() {
+  try {
+    const saved = localStorage.getItem(GROUP_MODE_STORAGE_KEY)
+    return GROUP_MODES.some((m) => m.value === saved) ? saved : 'none'
+  } catch {
+    return 'none'
+  }
+}
+
+function RankingsTable({ rankings: baseRankings, users, locationIdForRanking, locationById, groupMode }) {
   const rankings = withUserScores(baseRankings, users)
   const { sortKey, sortDirection, toggleSort, sortedData } = useSortableTable(rankings)
+  const [expanded, setExpanded] = useState(new Set())
 
   const displayData = sortKey ? sortedData : rankings
+  const grouped = groupMode !== 'none'
+  const groups = groupRankings(displayData, locationById, groupMode)
+  const multiGroups = groups.filter((g) => g.rows.length > 1)
+  const allExpanded = multiGroups.length > 0 && multiGroups.every((g) => expanded.has(g.key))
+
+  const toggleGroup = (key) => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+  const toggleAll = () => setExpanded(allExpanded ? new Set() : new Set(multiGroups.map((g) => g.key)))
+
+  const locationCell = (r) =>
+    locationIdForRanking(r) ? (
+      <Link to={`/locations/${locationIdForRanking(r)}`} className="text-blue-700 hover:underline">
+        {r.location_name}
+      </Link>
+    ) : (
+      r.location_name
+    )
+
+  const scoreCells = (r) => (
+    <>
+      <td className="py-2 text-right font-mono">{(r.overall_score ?? 0).toFixed(2)}</td>
+      {users.map((u) => (
+        <td key={u.id} className="py-2 text-right font-mono">{userScore(r, u).toFixed(2)}</td>
+      ))}
+    </>
+  )
 
   return (
-    <table className="w-full text-sm">
-      <thead>
-        <tr className="border-b text-left text-gray-500">
-          <th className="py-2 w-12">#</th>
-          <SortHeader label="Location" sortKey="location_name" currentSortKey={sortKey} sortDirection={sortDirection} onToggle={toggleSort} className="py-2" />
-          <SortHeader label="Country" sortKey="country" currentSortKey={sortKey} sortDirection={sortDirection} onToggle={toggleSort} className="py-2" />
-          <SortHeader label="Combined" sortKey="overall_score" currentSortKey={sortKey} sortDirection={sortDirection} onToggle={toggleSort} className="py-2 text-right" />
-          {users.map((u) => (
-            <SortHeader key={u.id} label={personLabel(u)} sortKey={userKey(u)} currentSortKey={sortKey} sortDirection={sortDirection} onToggle={toggleSort} className="py-2 text-right" />
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {displayData.map((r, i) => (
-          <tr key={r.location_name} className="border-b hover:bg-gray-50">
-            <td className="py-2 text-gray-400">{i + 1}</td>
-            <td className="py-2 font-medium">
-              {locationIdForRanking(r) ? (
-                <Link to={`/locations/${locationIdForRanking(r)}`} className="text-blue-700 hover:underline">
-                  {r.location_name}
-                </Link>
-              ) : (
-                r.location_name
-              )}
-            </td>
-            <td className="py-2 text-gray-500">{r.country}</td>
-            <td className="py-2 text-right font-mono">{(r.overall_score ?? 0).toFixed(2)}</td>
+    <>
+      {grouped && rankings.length > 0 && (
+        <div className="flex items-center gap-3 mb-2 text-xs text-gray-500">
+          <span>
+            {groups.length} {groupMode === 'country' ? 'countries' : 'regions'} · {displayData.length} places
+          </span>
+          {multiGroups.length > 0 && (
+            <button onClick={toggleAll} className="text-blue-600 hover:underline">
+              {allExpanded ? 'Collapse all' : 'Expand all'}
+            </button>
+          )}
+        </div>
+      )}
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b text-left text-gray-500">
+            <th className="py-2 w-12">#</th>
+            <SortHeader label="Location" sortKey="location_name" currentSortKey={sortKey} sortDirection={sortDirection} onToggle={toggleSort} className="py-2" />
+            <SortHeader label={groupMode === 'region' ? 'Region' : 'Country'} sortKey="country" currentSortKey={sortKey} sortDirection={sortDirection} onToggle={toggleSort} className="py-2" />
+            <SortHeader label="Combined" sortKey="overall_score" currentSortKey={sortKey} sortDirection={sortDirection} onToggle={toggleSort} className="py-2 text-right" />
             {users.map((u) => (
-              <td key={u.id} className="py-2 text-right font-mono">{userScore(r, u).toFixed(2)}</td>
+              <SortHeader key={u.id} label={personLabel(u)} sortKey={userKey(u)} currentSortKey={sortKey} sortDirection={sortDirection} onToggle={toggleSort} className="py-2 text-right" />
             ))}
           </tr>
-        ))}
-        {rankings.length === 0 && (
-          <tr>
-            <td colSpan={4 + users.length}>
-              <EmptyState
-                icon="chart"
-                title="No rankings yet"
-                message="Add locations and scores to see rankings here."
-                action={<Link to="/locations" className="text-sm text-blue-600 hover:underline">Go to Locations</Link>}
-              />
-            </td>
-          </tr>
-        )}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {groups.map((g, i) => {
+            const [top, ...rest] = g.rows
+            const isOpen = expanded.has(g.key)
+            return [
+              <tr key={top.location_id} className="border-b hover:bg-gray-50">
+                <td className="py-2 text-gray-400">{i + 1}</td>
+                <td className="py-2 font-medium">
+                  {locationCell(top)}
+                  {rest.length > 0 && (
+                    <button
+                      onClick={() => toggleGroup(g.key)}
+                      className="ml-2 px-1.5 py-0.5 text-xs font-normal rounded bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      aria-expanded={isOpen}
+                    >
+                      {isOpen ? '− hide' : `+${rest.length} more`}
+                    </button>
+                  )}
+                </td>
+                <td className="py-2 text-gray-500">{grouped ? g.label : top.country}</td>
+                {scoreCells(top)}
+              </tr>,
+              ...(isOpen
+                ? rest.map((r) => (
+                    <tr key={r.location_id} className="border-b bg-gray-50/60 hover:bg-gray-50 text-gray-600">
+                      <td className="py-1.5" />
+                      <td className="py-1.5 pl-5">{locationCell(r)}</td>
+                      <td className="py-1.5 text-gray-400">{g.label}</td>
+                      {scoreCells(r)}
+                    </tr>
+                  ))
+                : []),
+            ]
+          })}
+          {rankings.length === 0 && (
+            <tr>
+              <td colSpan={4 + users.length}>
+                <EmptyState
+                  icon="chart"
+                  title="No rankings yet"
+                  message="Add locations and scores to see rankings here."
+                  action={<Link to="/locations" className="text-sm text-blue-600 hover:underline">Go to Locations</Link>}
+                />
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </>
   )
 }
 
@@ -72,6 +145,7 @@ export default function Dashboard() {
   const [users, setUsers] = useState([])
   const [chartType, setChartType] = useState('bar')
   const [selectedLocations, setSelectedLocations] = useState(new Set())
+  const [groupMode, setGroupMode] = useState(loadGroupMode)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -109,6 +183,15 @@ export default function Dashboard() {
   const selectAll = () => setSelectedLocations(new Set(rankings.map((r) => r.location_name)))
   const selectNone = () => setSelectedLocations(new Set())
 
+  const changeGroupMode = (mode) => {
+    setGroupMode(mode)
+    try {
+      localStorage.setItem(GROUP_MODE_STORAGE_KEY, mode)
+    } catch {
+      // Storage unavailable; the choice just won't persist.
+    }
+  }
+
   const filteredRankings = rankings.filter((r) => selectedLocations.has(r.location_name))
 
   const barData = filteredRankings.map((r) => ({
@@ -133,6 +216,10 @@ export default function Dashboard() {
   )
   const locationIdForRanking = (ranking) =>
     locationIdByKey[`${ranking.location_name.trim().toLowerCase()}::${ranking.country.trim().toLowerCase()}`]
+  const locationById = Object.fromEntries(locations.map((loc) => [loc.id, loc]))
+  // Best place per region/country, in the current ranking order.
+  const selectBestPerGroup = () =>
+    setSelectedLocations(new Set(groupRankings(rankings, locationById, groupMode).map((g) => g.rows[0].location_name)))
 
   if (loading) return <Spinner label="Loading dashboard..." />
 
@@ -163,8 +250,24 @@ export default function Dashboard() {
       </div>
 
       <div className="bg-white rounded-lg shadow p-4 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Rankings</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <h2 className="text-lg font-semibold">Rankings</h2>
+            <div className="flex items-center gap-1.5 text-sm">
+              <span className="text-xs text-gray-500">Group by</span>
+              <div className="inline-flex rounded border border-gray-300 overflow-hidden">
+                {GROUP_MODES.map((m) => (
+                  <button
+                    key={m.value}
+                    onClick={() => changeGroupMode(m.value)}
+                    className={`px-2.5 py-0.5 text-xs ${groupMode === m.value ? 'bg-gray-700 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
           <div className="flex gap-2">
             {[{ value: 'combined', label: 'Combined' }, ...users.map((u) => ({ value: u.name, label: personLabel(u) }))].map((v) => (
               <button
@@ -177,7 +280,13 @@ export default function Dashboard() {
             ))}
           </div>
         </div>
-        <RankingsTable rankings={rankings} users={users} locationIdForRanking={locationIdForRanking} />
+        <RankingsTable
+          rankings={rankings}
+          users={users}
+          locationIdForRanking={locationIdForRanking}
+          locationById={locationById}
+          groupMode={groupMode}
+        />
       </div>
 
       {rankings.length > 0 && (
@@ -203,7 +312,7 @@ export default function Dashboard() {
           {/* Location selector chips */}
           <div className="flex flex-wrap items-center gap-2 mb-4">
             <span className="text-xs text-gray-500 mr-1">Show:</span>
-            {rankings.map((r, i) => (
+            {rankings.map((r) => (
               <button
                 key={r.location_name}
                 onClick={() => toggleLocation(r.location_name)}
@@ -219,6 +328,11 @@ export default function Dashboard() {
             <span className="text-gray-300 mx-1">|</span>
             <button onClick={selectAll} className="text-xs text-blue-600 hover:underline">All</button>
             <button onClick={selectNone} className="text-xs text-blue-600 hover:underline">None</button>
+            {groupMode !== 'none' && (
+              <button onClick={selectBestPerGroup} className="text-xs text-blue-600 hover:underline">
+                Best per {groupMode}
+              </button>
+            )}
           </div>
 
           {chartType === 'bar' ? (
